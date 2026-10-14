@@ -26,7 +26,8 @@ checkpoints/
 *.onnx
 
 # Logs & Results
-logs/
+logs/*
+!logs/.gitkeep
 results/
 *.log
 
