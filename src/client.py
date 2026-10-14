@@ -48,17 +48,25 @@ class ECGFlowerClient(fl.client.NumPyClient):
         if self.strategy == "fedsol":
             self.fedsol_opt = FedSOLOptimizer(self.model, self.global_model, lr=self.lr)
 
-        # Siapkan synthetic dataset dummy (12, 5000) jika data lokal belum didownload penuh
-        # Ini mencegah client crash saat pengujian konektivitas cluster
+        # Setup data loader
+        self.data_dir = os.environ.get("DATA_DIR", f"data/{self.dataset_name}")
         self._init_dataloader()
 
     def _init_dataloader(self):
-        # Dummy batch generator for readiness test
-        num_samples = 128
-        dummy_x = torch.randn(num_samples, 12, 5000, dtype=torch.float32)
-        dummy_y = (torch.rand(num_samples, 27) > 0.85).float()
-        dataset = TensorDataset(dummy_x, dummy_y)
-        self.train_loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
+        from src.preprocessing.dataset import ECGDataset
+        real_dataset = ECGDataset(data_dir=self.data_dir, dataset_name=self.dataset_name)
+
+        if len(real_dataset) > 0:
+            print(f"📊 Menemukan {len(real_dataset)} rekaman EKG asli di '{self.data_dir}'. Memuat DataLoader...")
+            self.train_loader = DataLoader(real_dataset, batch_size=self.batch_size, shuffle=True, drop_last=True)
+        else:
+            print(f"ℹ️ Folder '{self.data_dir}' belum memiliki rekaman EKG mentah.")
+            print("⚡ Menggunakan dataset dummy (12, 5000) untuk pengujian siklus komunikasi FL.")
+            num_samples = 128
+            dummy_x = torch.randn(num_samples, 12, 5000, dtype=torch.float32)
+            dummy_y = (torch.rand(num_samples, 27) > 0.85).float()
+            dataset = TensorDataset(dummy_x, dummy_y)
+            self.train_loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
 
     def get_parameters(self, config):
         """Ambil parameter model untuk dikirim ke server"""
