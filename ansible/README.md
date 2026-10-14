@@ -20,11 +20,12 @@ Direktori ini berisi seluruh kumpulan playbook, inventarisasi host, dan variabel
 ```text
 ansible/
 ├── ansible.cfg          # Konfigurasi SSH, privilege escalation, timeout
-├── inventory.ini        # Definisi IP VM 1, 2, 3, 4 dan variabel dataset
+├── inventory.ini        # Definisi IP VM 1, 2, 3, 4 dan Google Drive File ID dataset
 ├── group_vars/
 │   └── all.yml          # Variabel global (port, strategi, hyperparameter FL)
 ├── setup_docker.yml     # Instalasi Docker Engine & Compose plugin (Ubuntu 24.04)
-├── deploy_fl.yml        # Build & initial deployment container (Server, Dashboard, Clients)
+├── distribute_data.yml  # Unduh & ekstrak dataset EKG via Google Drive (gdown)
+├── deploy_fl.yml        # Build & initial deployment container (Server, Web UI, Clients)
 ├── run_experiment.yml   # Eksekusi eksperimen per-strategi (FedBN / FedBB / FedSOL)
 ├── manage_fl.yml        # Utilitas monitoring status, stop container, & fetch results
 └── README.md            # Dokumentasi panduan eksekusi

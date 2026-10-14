@@ -1,0 +1,99 @@
+---
+# ==============================================================================
+# PLAYBOOK: Setup & Distribusi Dataset EKG via Google Drive (gdown)
+# Penggunaan:
+#   cd ansible
+#   ansible-playbook -i inventory.ini distribute_data.yml
+# ==============================================================================
+
+- name: Setup dan Distribusi Dataset Asli ke Seluruh VM Klien
+  hosts: clients
+  become: true
+  gather_facts: true
+
+  vars:
+    # Direktori data di root sistem (untuk Docker mount) dan di repo user
+    project_data_base: "/data"
+    user_project_data_base: "/home/{{ ansible_user }}/ecg-fl-project/data"
+
+  tasks:
+    - name: 1. Pasang paket dependensi sistem (pigz, tar, python3-pip)
+      ansible.builtin.apt:
+        name:
+          - python3-pip
+          - pigz
+          - tar
+          - unzip
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: 2. Pasang gdown untuk unduh file Google Drive ukuran besar
+      ansible.builtin.pip:
+        name: gdown
+        extra_args: "--break-system-packages"
+
+    - name: 3. Buat direktori data di /data dan di folder proyek pengguna
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0775"
+      loop:
+        - "{{ project_data_base }}"
+        - "{{ data_dir }}"
+        - "{{ user_project_data_base }}"
+
+    - name: 4. Unduh arsip dataset dari Google Drive menggunakan gdown
+      ansible.builtin.command: >
+        gdown --fuzzy --id {{ gdrive_file_id }} -O /tmp/{{ dataset_name }}.tar.gz
+      args:
+        creates: "{{ data_dir }}/.download_completed"
+      register: gdown_result
+      retries: 3
+      delay: 5
+      until: gdown_result is succeeded
+
+    - name: 5. Ekstrak arsip tar.gz menggunakan pigz (Multi-threaded Decompression)
+      ansible.builtin.unarchive:
+        src: "/tmp/{{ dataset_name }}.tar.gz"
+        dest: "{{ data_dir }}/"
+        remote_src: true
+        extra_opts: ["--use-compress-program=pigz"]
+        creates: "{{ data_dir }}/.download_completed"
+
+    - name: 6. Tandai bahwa proses unduh dan ekstraksi telah sukses
+      ansible.builtin.file:
+        path: "{{ data_dir }}/.download_completed"
+        state: touch
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0664"
+
+    - name: 7. Buat symlink dari /data/{{ dataset_name }} ke ~/ecg-fl-project/data/{{ dataset_name }}
+      ansible.builtin.file:
+        src: "{{ data_dir }}"
+        dest: "{{ user_project_data_base }}/{{ dataset_name }}"
+        state: link
+        force: true
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+
+    - name: 8. Bersihkan arsip sementara di /tmp untuk menghemat disk storage
+      ansible.builtin.file:
+        path: "/tmp/{{ dataset_name }}.tar.gz"
+        state: absent
+
+    - name: 9. Verifikasi ketersediaan rekaman sinyal EKG asli (.hea)
+      ansible.builtin.shell: "find {{ data_dir }} -type f -name '*.hea' | wc -l"
+      register: hea_count
+      changed_when: false
+
+    - name: 10. Tampilkan laporan kesiapan data per VM
+      ansible.builtin.debug:
+        msg:
+          - "Node: {{ inventory_hostname }} ({{ ansible_host }})"
+          - "Dataset: {{ dataset_label }} ({{ dataset_name }})"
+          - "Lokasi Data: {{ data_dir }} dan {{ user_project_data_base }}/{{ dataset_name }}"
+          - "Jumlah Rekaman EKG Asli (.hea): {{ hea_count.stdout | trim }} file"
