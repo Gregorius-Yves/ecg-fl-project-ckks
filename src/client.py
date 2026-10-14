@@ -24,6 +24,45 @@ from src.models.resnet1d import ResNet1D, is_batchnorm_param
 from src.strategies.fedbb import PNBLoss
 from src.strategies.fedsol import FedSOLOptimizer
 
+import threading
+import urllib.request
+import json
+import time
+
+class HeartbeatThread(threading.Thread):
+    def __init__(self, client, server_address: str, interval: float = 2.0):
+        super().__init__(daemon=True)
+        self.client = client
+        server_host = server_address.split(":")[0] if ":" in server_address else server_address
+        self.url = f"http://{server_host}:8501/api/client/heartbeat"
+        self.interval = interval
+        self.running = True
+
+    def run(self):
+        while self.running:
+            try:
+                payload = {
+                    "client_id": self.client.client_id,
+                    "dataset": self.client.dataset_name,
+                    "status": getattr(self.client, "current_status", "online"),
+                    "detail": getattr(self.client, "current_detail", "Online"),
+                    "current_round": getattr(self.client, "current_round", 0),
+                    "epoch": getattr(self.client, "current_epoch", 0),
+                    "batch": getattr(self.client, "current_batch", 0),
+                }
+                data = json.dumps(payload).encode("utf-8")
+                req = urllib.request.Request(
+                    self.url,
+                    data=data,
+                    headers={"Content-Type": "application/json"},
+                    method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=2.0) as resp:
+                    pass
+            except Exception:
+                pass
+            time.sleep(self.interval)
+
 
 class ECGFlowerClient(fl.client.NumPyClient):
     def __init__(self, client_id: str, dataset_name: str, strategy: str, batch_size: int = 32, epochs: int = 3, lr: float = 0.001):
@@ -33,6 +72,13 @@ class ECGFlowerClient(fl.client.NumPyClient):
         self.batch_size = batch_size
         self.epochs = epochs
         self.lr = lr
+
+        # Status tracking untuk Dashboard
+        self.current_status = "online"
+        self.current_detail = "Online (Standby)"
+        self.current_round = 0
+        self.current_epoch = 0
+        self.current_batch = 0
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = ResNet1D(in_channels=12, num_classes=27).to(self.device)
@@ -101,6 +147,9 @@ class ECGFlowerClient(fl.client.NumPyClient):
         epochs = config.get("local_epochs", self.epochs)
 
         self.strategy = server_strategy
+        self.current_round = server_round
+        self.current_status = "training"
+        self.current_detail = f"Ronde {server_round} (Memulai)"
         print(f"\n📢 [ROUND {server_round}] Instruksi dari Server: Menjalankan Strategi '{self.strategy.upper()}' ({epochs} epoch)")
 
         # Sesuaikan Loss Function & Optimizer sesuai perintah Server
@@ -142,10 +191,15 @@ class ECGFlowerClient(fl.client.NumPyClient):
                 if (batch_idx + 1) % 25 == 0 or (batch_idx + 1) == total_batches:
                     avg_b_loss = running_epoch_loss / (batch_idx + 1)
                     pct = ((batch_idx + 1) / total_batches) * 100
+                    self.current_epoch = epoch + 1
+                    self.current_batch = batch_idx + 1
+                    self.current_detail = f"Ronde {server_round} (Ep {epoch+1}/{epochs} - {pct:.0f}%)"
                     print(f"   [Epoch {epoch+1}/{epochs}] Batch {batch_idx+1}/{total_batches} ({pct:.1f}%) | Batch Loss: {loss.item():.4f} (Avg: {avg_b_loss:.4f})", flush=True)
 
         num_examples = len(self.train_loader.dataset)
         avg_loss = total_loss / (epochs * len(self.train_loader))
+        self.current_status = "online"
+        self.current_detail = f"Selesai Ronde {server_round} (Standby)"
         metrics = {
             "loss": float(avg_loss),
             "client_id": self.client_id,
@@ -156,6 +210,8 @@ class ECGFlowerClient(fl.client.NumPyClient):
         return self.get_parameters(config={}), num_examples, metrics
 
     def evaluate(self, parameters, config):
+        self.current_status = "online"
+        self.current_detail = "Evaluasi Model Global"
         self.set_parameters(parameters)
         self.model.eval()
         total_loss = 0.0
@@ -167,6 +223,8 @@ class ECGFlowerClient(fl.client.NumPyClient):
                 total_loss += loss.item()
 
         avg_loss = total_loss / len(self.train_loader)
+        self.current_status = "online"
+        self.current_detail = "Online (Standby)"
         return float(avg_loss), len(self.train_loader.dataset), {"val_loss": float(avg_loss)}
 
 
@@ -190,6 +248,10 @@ def main():
         batch_size=args.batch_size,
         epochs=args.epochs
     )
+
+    # Mulai thread heartbeat background ke Dashboard Web UI (port 8501)
+    heartbeat = HeartbeatThread(client, args.server)
+    heartbeat.start()
 
     # Auto-reconnect loop: Klien tetap standby jika server menjalankan eksperimen berurutan (FedBN -> FedBB -> FedSOL)
     import time

@@ -247,7 +247,6 @@ function setServerRunningState(isRunning) {
     btnStop.textContent = 'Stop / Abort';
     statusDot.className = 'dot running';
     statusText.textContent = 'Server: Training Active';
-    setClientStatusBadges('training');
   } else {
     btnStart.disabled = false;
     btnStart.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg> Start Training`;
@@ -255,18 +254,62 @@ function setServerRunningState(isRunning) {
     btnStop.textContent = 'Stop / Abort';
     statusDot.className = 'dot idle';
     statusText.textContent = 'Server: Idle';
-    setClientStatusBadges('online');
   }
 }
 
-function setClientStatusBadges(status) {
-  const badges = ['badgeVm2', 'badgeVm3', 'badgeVm4'];
-  badges.forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.className = `badge-status ${status}`;
-    el.textContent = status.charAt(0).toUpperCase() + status.slice(1);
-  });
+function updateClientStatuses(clients, connectedCount, totalClients) {
+  const summaryEl = document.getElementById('clientsConnectedSummary');
+  if (summaryEl) {
+    summaryEl.textContent = `${connectedCount} / ${totalClients} Klien Terhubung`;
+    if (connectedCount === totalClients) {
+      summaryEl.className = 'badge-status online';
+    } else if (connectedCount > 0) {
+      summaryEl.className = 'badge-status idle';
+    } else {
+      summaryEl.className = 'badge-status offline';
+    }
+  }
+
+  const clientMap = {
+    'vm2': { badge: 'badgeVm2', card: 'clientNodeVm2' },
+    'vm3': { badge: 'badgeVm3', card: 'clientNodeVm3' },
+    'vm4': { badge: 'badgeVm4', card: 'clientNodeVm4' }
+  };
+
+  for (const [key, els] of Object.entries(clientMap)) {
+    const badge = document.getElementById(els.badge);
+    const card = document.getElementById(els.card);
+    const client = clients ? clients[key] : null;
+
+    if (!client || client.status === 'offline') {
+      if (badge) {
+        badge.className = 'badge-status offline';
+        badge.textContent = 'Offline';
+      }
+      if (card) {
+        card.classList.add('is-offline');
+        card.classList.remove('is-training');
+      }
+    } else if (client.status === 'training') {
+      if (badge) {
+        badge.className = 'badge-status training';
+        badge.textContent = client.status_label || 'Training';
+      }
+      if (card) {
+        card.classList.remove('is-offline');
+        card.classList.add('is-training');
+      }
+    } else {
+      if (badge) {
+        badge.className = 'badge-status online';
+        badge.textContent = client.status_label || 'Online';
+      }
+      if (card) {
+        card.classList.remove('is-offline');
+        card.classList.remove('is-training');
+      }
+    }
+  }
 }
 
 function updateProgressBar(current, total) {
@@ -294,6 +337,11 @@ async function pollBackend() {
       
       if (isServerActive !== appState.isRunning) {
         setServerRunningState(isServerActive);
+      }
+
+      // Update real status of each client
+      if (data.clients) {
+        updateClientStatuses(data.clients, data.connected_count || 0, data.total_clients || 3);
       }
 
       if (data.current_round !== undefined) {

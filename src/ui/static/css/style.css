@@ -365,6 +365,26 @@ select:focus, input:focus {
   box-shadow: var(--shadow-sm);
 }
 
+.client-node-item.is-offline {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.client-node-item.is-offline .client-avatar {
+  filter: grayscale(85%);
+  opacity: 0.7;
+}
+
+.client-node-item.is-offline .client-info h4 {
+  color: #64748b;
+}
+
+.client-node-item.is-training {
+  border-color: #93c5fd;
+  background: #f0f7ff;
+  box-shadow: 0 0 0 1px #bfdbfe;
+}
+
 .client-left {
   display: flex;
   align-items: center;

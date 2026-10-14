@@ -32,6 +32,96 @@ os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
 SERVER_LOG_FILE = os.path.join(LOG_DIR, "server_exec.log")
 
+import time
+import socket
+
+KNOWN_CLIENTS = {
+    "vm2": {"id": "1", "name": "VM 2 — PTB-XL", "ip": "10.34.100.122", "dataset": "ptbxl"},
+    "vm3": {"id": "2", "name": "VM 3 — Chapman-Shaoxing", "ip": "10.34.100.123", "dataset": "chapman"},
+    "vm4": {"id": "3", "name": "VM 4 — G12EC (CinC 2020)", "ip": "10.34.100.125", "dataset": "g12ec"},
+}
+
+class ClientTracker:
+    heartbeats = {}  # key -> dict(last_seen=float, status=str, detail=str, ...)
+
+    @classmethod
+    def register_heartbeat(cls, data, client_ip=None):
+        cid = str(data.get("client_id", "")).strip()
+        dataset = str(data.get("dataset", "")).strip().lower()
+        key = None
+        for k, v in KNOWN_CLIENTS.items():
+            if str(v["id"]) == cid or v["dataset"] == dataset or (client_ip and v["ip"] == client_ip):
+                key = k
+                break
+        if key:
+            cls.heartbeats[key] = {
+                "last_seen": time.time(),
+                "status": data.get("status", "online"),
+                "detail": data.get("detail", "Online"),
+                "current_round": data.get("current_round", 0),
+                "epoch": data.get("epoch", 0),
+                "batch": data.get("batch", 0)
+            }
+
+    @classmethod
+    def get_established_connections(cls):
+        """Mendeteksi IP klien yang aktif terhubung via gRPC Flower Server (port 8080)"""
+        active_ips = set()
+        try:
+            res = subprocess.run(
+                ["ss", "-Htn", "sport", "=", ":8080"],
+                capture_output=True,
+                text=True,
+                timeout=0.8
+            )
+            for line in res.stdout.splitlines():
+                parts = line.split()
+                if len(parts) >= 4 and parts[0] == "ESTAB":
+                    peer = parts[3]
+                    ip = peer.rsplit(":", 1)[0].strip("[]")
+                    active_ips.add(ip)
+        except Exception:
+            pass
+        return active_ips
+
+    @classmethod
+    def get_all_status(cls):
+        now = time.time()
+        active_tcp_ips = cls.get_established_connections()
+        result = {}
+        connected_count = 0
+
+        for key, info in KNOWN_CLIENTS.items():
+            ip = info["ip"]
+            hb = cls.heartbeats.get(key)
+            is_recent_heartbeat = hb is not None and (now - hb["last_seen"] < 8.0)
+            is_active_tcp = ip in active_tcp_ips
+
+            if is_recent_heartbeat:
+                raw_status = hb.get("status", "online")
+                detail = hb.get("detail", "Online")
+                status = "training" if raw_status == "training" else "online"
+                connected_count += 1
+            elif is_active_tcp:
+                status = "online"
+                detail = "Terhubung ke FL Server"
+                connected_count += 1
+            else:
+                status = "offline"
+                detail = "Offline"
+
+            result[key] = {
+                "id": info["id"],
+                "name": info["name"],
+                "ip": ip,
+                "dataset": info["dataset"],
+                "status": status,
+                "status_label": detail,
+                "last_seen": hb["last_seen"] if hb else None
+            }
+
+        return result, connected_count
+
 # Global Process State Manager
 class ProcessManager:
     server_process = None
@@ -138,6 +228,22 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"status": "stopped"}).encode("utf-8"))
             return
 
+        elif self.path == "/api/client/heartbeat":
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length)
+            if body:
+                try:
+                    payload = json.loads(body.decode("utf-8"))
+                    client_ip = self.client_address[0] if self.client_address else None
+                    ClientTracker.register_heartbeat(payload, client_ip=client_ip)
+                except Exception:
+                    pass
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"status": "ok"}')
+            return
+
         self.send_error(404, "Endpoint not found")
 
     def do_GET(self):
@@ -147,6 +253,7 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
 
         elif self.path == "/api/status":
             is_running = bool(pm.server_process and pm.server_process.poll() is None)
+            clients_status, connected_count = ClientTracker.get_all_status()
 
             # Ekstrak current_round dari log jika server aktif
             current_round = 0
@@ -180,6 +287,9 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
                 "current_round": current_round,
                 "total_rounds": pm.config.get("num_rounds", 50),
                 "strategy": pm.config.get("strategy", "fedbn"),
+                "clients": clients_status,
+                "connected_count": connected_count,
+                "total_clients": len(KNOWN_CLIENTS),
                 "metrics": metrics_history
             }
 
