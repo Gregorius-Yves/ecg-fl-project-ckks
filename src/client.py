@@ -37,8 +37,11 @@ class HeartbeatThread(threading.Thread):
         self.url = f"http://{server_host}:8501/api/client/heartbeat"
         self.interval = interval
         self.running = True
+        self.has_logged_success = False
 
     def run(self):
+        print(f"💓 [HEARTBEAT] Memulai pelaporan status ke Dashboard -> {self.url}", flush=True)
+        consecutive_errors = 0
         while self.running:
             try:
                 payload = {
@@ -57,10 +60,15 @@ class HeartbeatThread(threading.Thread):
                     headers={"Content-Type": "application/json"},
                     method="POST"
                 )
-                with urllib.request.urlopen(req, timeout=2.0) as resp:
-                    pass
-            except Exception:
-                pass
+                with urllib.request.urlopen(req, timeout=2.5) as resp:
+                    if not self.has_logged_success:
+                        print(f"✅ [HEARTBEAT] Terhubung ke Dashboard Web UI ({self.url})!", flush=True)
+                        self.has_logged_success = True
+                consecutive_errors = 0
+            except Exception as e:
+                consecutive_errors += 1
+                if consecutive_errors == 1 or consecutive_errors % 15 == 0:
+                    print(f"⚠️ [HEARTBEAT] Gagal kirim heartbeat ke Dashboard ({self.url}): {e}", flush=True)
             time.sleep(self.interval)
 
 

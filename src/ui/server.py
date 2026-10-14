@@ -54,6 +54,9 @@ class ClientTracker:
                 key = k
                 break
         if key:
+            was_registered = key in cls.heartbeats and (time.time() - cls.heartbeats[key]["last_seen"] < 8.0)
+            if not was_registered:
+                print(f"💓 [HEARTBEAT] Klien {KNOWN_CLIENTS[key]['name']} (ID: {cid}) TERHUBUNG dari {client_ip}!", flush=True)
             cls.heartbeats[key] = {
                 "last_seen": time.time(),
                 "status": data.get("status", "online"),
