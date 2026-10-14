@@ -56,17 +56,23 @@ class ECGFlowerClient(fl.client.NumPyClient):
         from src.preprocessing.dataset import ECGDataset
         real_dataset = ECGDataset(data_dir=self.data_dir, dataset_name=self.dataset_name)
 
-        if len(real_dataset) > 0:
-            print(f"📊 Menemukan {len(real_dataset)} rekaman EKG asli di '{self.data_dir}'. Memuat DataLoader...")
-            self.train_loader = DataLoader(real_dataset, batch_size=self.batch_size, shuffle=True, drop_last=True)
-        else:
-            print(f"ℹ️ Folder '{self.data_dir}' belum memiliki rekaman EKG mentah.")
-            print("⚡ Menggunakan dataset dummy (12, 5000) untuk pengujian siklus komunikasi FL.")
-            num_samples = 128
-            dummy_x = torch.randn(num_samples, 12, 5000, dtype=torch.float32)
-            dummy_y = (torch.rand(num_samples, 27) > 0.85).float()
-            dataset = TensorDataset(dummy_x, dummy_y)
-            self.train_loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
+        if len(real_dataset) == 0:
+            error_msg = (
+                f"\n❌ [ZERO FABRICATION POLICY] Dataset asli '{self.dataset_name}' tidak ditemukan di '{self.data_dir}'!\n"
+                f"   Sistem ini strictly menolak data fabrikasi/dummy.\n"
+                f"   Silakan unduh dataset asli PhysioNet terlebih dahulu dengan perintah:\n"
+                f"   python3 download_data.py --dataset {self.dataset_name}\n"
+            )
+            print(error_msg)
+            raise FileNotFoundError(error_msg)
+
+        print(f"✅ Memuat {len(real_dataset)} rekaman sinyal EKG asli dari '{self.data_dir}'.")
+        self.train_loader = DataLoader(
+            real_dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            drop_last=True
+        )
 
     def get_parameters(self, config):
         """Ambil parameter model untuk dikirim ke server"""

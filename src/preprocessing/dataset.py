@@ -78,7 +78,4 @@ class ECGDataset(Dataset):
             return torch.tensor(processed_signal, dtype=torch.float32), torch.tensor(label_vec, dtype=torch.float32)
 
         except Exception as e:
-            # Fallback jika terjadi corrupt pada satu file
-            dummy_signal = np.random.randn(12, 5000).astype(np.float32)
-            dummy_label = np.zeros(len(self.classes), dtype=np.float32)
-            return torch.tensor(dummy_signal), torch.tensor(dummy_label)
+            raise IOError(f"Gagal memuat rekaman EKG asli di '{record_path}': {e}. Pembatalan dilakukan untuk menjaga integritas data riil.")
