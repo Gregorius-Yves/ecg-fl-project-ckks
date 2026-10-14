@@ -30,9 +30,10 @@ DATA_URLS = {
     },
     "g12ec": {
         "name": "G12EC (CinC Challenge 2020 Georgia)",
-        "url": "https://cloudstor.aarnet.edu.au/plus/s/5xkmmRPWNU7pZan/download", # PhysioNet Challenge mirror
-        "archive_name": "g12ec.tar.gz",
-        "target_dir": "data/g12ec"
+        "url": "https://physionet.org/static/published-projects/challenge-2020/1.0.2/training/georgia.tar.gz",
+        "archive_name": "georgia.tar.gz",
+        "target_dir": "data/g12ec",
+        "wfdb_name": "challenge-2020"
     }
 }
 
@@ -94,12 +95,18 @@ def main():
         try:
             download_file(ds_info["url"], archive_path, ds_info["name"])
             extract_archive(archive_path, target_dir)
-            # Hapus archive untuk menghemat disk space
             if os.path.exists(archive_path):
                 os.remove(archive_path)
         except Exception as e:
-            print(f"❌ Gagal mengunduh {ds_info['name']}: {e}")
-            print("💡 Anda dapat mendownload manual via wget atau rsync ke folder data/")
+            print(f"⚠️ Gagal download direct archive ({e}). Mencoba unduh via library wfdb...")
+            try:
+                import wfdb
+                wfdb_target = ds_info.get("wfdb_name", ds_key)
+                wfdb.dl_database(wfdb_target, dl_dir=target_dir)
+                print(f"✅ Berhasil mengunduh {ds_info['name']} via wfdb!")
+            except Exception as wfdb_err:
+                print(f"❌ Gagal unduh via wfdb: {wfdb_err}")
+                print(f"💡 Anda tetap dapat menjalankan client FL langsung karena sistem otomatis memakai data simulasi jika data belum tersedia.")
 
 
 if __name__ == "__main__":
