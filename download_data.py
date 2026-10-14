@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 """
-Resumable ECG Dataset Downloader with Zero Fabrication Guarantee
-Supports:
-  - VM 2: PTB-XL (PhysioNet v1.0.3)
-  - VM 3: Chapman-Shaoxing (Large ECG Arrhythmia Database v1.0.0)
-  - VM 4: G12EC (PhysioNet CinC 2020 Georgia 12-Lead ECG)
-Features:
-  - HTTP Range header (Resumes broken downloads from exact last byte)
-  - Integrity and file size check
-  - Automatic extraction to data/<dataset>/
+Resumable ECG Dataset Downloader (Zero-Dependency & Zero Fabrication)
+Supports HTTP Range Resume from exact last byte.
+Runs directly on clean Python environments without requiring external packages.
 """
 
 import os
 import sys
 import argparse
-import requests
+import urllib.request
 import zipfile
 import tarfile
-from tqdm import tqdm
+
+# Optional beauty progress bar, fallback to native text bar
+try:
+    from tqdm import tqdm
+    HAS_TQDM = True
+except ImportError:
+    HAS_TQDM = False
 
 DATASETS = {
     "ptbxl": {
@@ -41,59 +41,92 @@ DATASETS = {
 }
 
 
+def print_progress_bar(current: int, total: int, prefix=""):
+    """Progress bar teks bawaan Python standard library."""
+    if total and total > 0:
+        percent = float(current) / total
+        bar_len = 30
+        filled_len = int(round(bar_len * percent))
+        bar = "█" * filled_len + "-" * (bar_len - filled_len)
+        cur_mb = current / (1024 * 1024)
+        tot_mb = total / (1024 * 1024)
+        sys.stdout.write(f"\r{prefix} |{bar}| {percent*100:.1f}% ({cur_mb:.1f}/{tot_mb:.1f} MB)")
+    else:
+        cur_mb = current / (1024 * 1024)
+        sys.stdout.write(f"\r{prefix} {cur_mb:.1f} MB terunduh...")
+    sys.stdout.flush()
+
+
 def download_resumable(url: str, dest_path: str, desc: str):
     """
     Mengunduh file dengan dukungan HTTP Range (Resume download jika terputus).
-    Jika file sudah ada sebagian, proses unduh akan melanjutkan dari byte terakhir.
+    Menggunakan urllib bawaan Python agar tidak butuh dependensi tambahan.
     """
     os.makedirs(os.path.dirname(dest_path), exist_ok=True)
     part_path = dest_path + ".part"
 
-    # Periksa ukuran file sementara jika sebelumnya terputus
     existing_size = os.path.getsize(part_path) if os.path.exists(part_path) else 0
 
-    headers = {}
+    req = urllib.request.Request(url)
+    req.add_header("User-Agent", "Mozilla/5.0 (CardioPulse-FL-Downloader)")
+
     if existing_size > 0:
-        headers["Range"] = f"bytes={existing_size}-"
-        print(f"🔄 Menemukan unduhan sebelumnya ({existing_size / (1024*1024):.2f} MB).")
+        req.add_header("Range", f"bytes={existing_size}-")
+        print(f"🔄 Menemukan unduhan parsial ({existing_size / (1024*1024):.2f} MB).")
         print(f"⏩ Melanjutkan dari byte terakhir...")
 
-    session = requests.Session()
-    response = session.get(url, headers=headers, stream=True, timeout=30)
+    try:
+        response = urllib.request.urlopen(req, timeout=30)
+    except urllib.error.HTTPError as e:
+        if e.code == 416:
+            # Range not satisfiable (file sudah lengkap)
+            print("✅ Berkas sudah lengkap.")
+            os.rename(part_path, dest_path)
+            return
+        raise e
 
-    # Tangani respons server
-    if response.status_code == 416:
-        # Range Not Satisfiable (file sudah komplit)
-        total_size = existing_size
-    elif response.status_code not in (200, 206):
-        raise RuntimeError(f"Gagal mengunduh: HTTP {response.status_code} ({response.reason})")
+    # Hitung total ukuran
+    content_length = response.headers.get("Content-Length")
+    if content_length is not None:
+        total_size = int(content_length) + existing_size
     else:
-        content_length = response.headers.get("Content-Length")
-        if content_length is not None:
-            total_size = int(content_length) + existing_size
-        else:
-            total_size = None
+        total_size = None
 
-    mode = "ab" if existing_size > 0 and response.status_code == 206 else "wb"
-    if mode == "wb":
-        existing_size = 0
+    is_resume = (existing_size > 0 and response.status in (206, 200))
+    mode = "ab" if is_resume else "wb"
+    downloaded = existing_size if is_resume else 0
 
-    chunk_size = 1024 * 1024  # 1 MB chunks
+    chunk_size = 1024 * 1024  # 1 MB chunk
 
-    with open(part_path, mode) as f, tqdm(
-        total=total_size,
-        initial=existing_size,
-        unit="B",
-        unit_scale=True,
-        unit_divisor=1024,
-        desc=f"Unduh {desc}"
-    ) as bar:
-        for chunk in response.iter_content(chunk_size=chunk_size):
-            if chunk:
+    print(f"📥 Memulai pengunduhan {desc}...")
+
+    if HAS_TQDM:
+        with open(part_path, mode) as f, tqdm(
+            total=total_size,
+            initial=downloaded,
+            unit="B",
+            unit_scale=True,
+            unit_divisor=1024,
+            desc=desc
+        ) as bar:
+            while True:
+                chunk = response.read(chunk_size)
+                if not chunk:
+                    break
                 f.write(chunk)
                 bar.update(len(chunk))
+    else:
+        with open(part_path, mode) as f:
+            while True:
+                chunk = response.read(chunk_size)
+                if not chunk:
+                    break
+                f.write(chunk)
+                downloaded += len(chunk)
+                print_progress_bar(downloaded, total_size, prefix=desc)
+        print()
 
-    # Ganti nama dari .part ke file final setelah tuntas
+    # Rename file .part ke file akhir setelah selesai
     os.rename(part_path, dest_path)
     print(f"✅ Unduhan selesai dan tersimpan di: {dest_path}")
 
@@ -105,10 +138,14 @@ def extract_archive(archive_path: str, target_dir: str):
 
     if archive_path.endswith(".zip"):
         with zipfile.ZipFile(archive_path, "r") as z:
-            # Dapatkan list berkas untuk progress bar
             members = z.namelist()
-            for member in tqdm(members, desc="Ekstraksi Zip", unit="file"):
+            total_files = len(members)
+            for idx, member in enumerate(members):
                 z.extract(member, target_dir)
+                if idx % 500 == 0 or idx == total_files - 1:
+                    sys.stdout.write(f"\rEkstraksi: {idx + 1}/{total_files} file...")
+                    sys.stdout.flush()
+            print()
     elif archive_path.endswith((".tar.gz", ".tar")):
         with tarfile.open(archive_path, "r:*") as t:
             t.extractall(target_dir)
@@ -117,7 +154,7 @@ def extract_archive(archive_path: str, target_dir: str):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Resumable ECG Dataset Downloader (Zero Fabrication)")
+    parser = argparse.ArgumentParser(description="Resumable ECG Dataset Downloader")
     parser.add_argument(
         "--dataset",
         type=str,
