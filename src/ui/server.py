@@ -83,15 +83,23 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
 
             log_output = open(SERVER_LOG_FILE, "a", encoding="utf-8")
 
+            # Deteksi otomatis Python interpreter (prioritaskan venv jika ada)
+            venv_python = BASE_DIR / "venv" / "bin" / "python3"
+            python_bin = str(venv_python) if venv_python.exists() else sys.executable
+
             # Bangun perintah eksekusi server
             cmd = [
-                sys.executable, "-m", "src.server",
+                python_bin, "-m", "src.server",
                 "--strategy", str(pm.config["strategy"]),
                 "--rounds", str(pm.config["num_rounds"]),
                 "--min_clients", "3"
             ]
 
             env = os.environ.copy()
+            if venv_python.exists():
+                env["PATH"] = f"{BASE_DIR}/venv/bin:" + env.get("PATH", "")
+                env["VIRTUAL_ENV"] = str(BASE_DIR / "venv")
+
             env["PYTHONPATH"] = str(BASE_DIR)
             env["STRATEGY"] = str(pm.config["strategy"])
             env["NUM_ROUNDS"] = str(pm.config["num_rounds"])
