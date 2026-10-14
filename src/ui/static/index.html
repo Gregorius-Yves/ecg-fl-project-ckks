@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="CardioPulse FL: Platform Benchmark Federated Learning Non-IID untuk Klasifikasi Aritmia Sinyal EKG 12-Lead Multi-Dataset (FedBN, FedBB, FedSOL)">
+  <title>CardioPulse FL — Benchmark Federated Learning EKG Multi-Dataset</title>
+  
+  <!-- Modern Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Chart.js for High-Precision Visualizations -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+  <!-- Top Navigation Bar -->
+  <header class="app-header" id="appHeader">
+    <div class="brand-section">
+      <div class="brand-icon" id="brandIcon">
+        <svg viewBox="0 0 24 24">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="brand-title">
+        <h1>CardioPulse FL</h1>
+        <p>Cross-Silo Non-IID ECG Benchmark System</p>
+      </div>
+    </div>
+
+    <div class="header-status-group">
+      <div class="live-indicator" id="liveClusterIndicator">
+        <div class="pulse-dot"></div>
+        <span>CLUSTER ACTIVE (4 NODES)</span>
+      </div>
+
+      <nav class="nav-tabs" id="navigationTabs">
+        <button class="nav-tab-btn active" id="tabOverview">Dashboard</button>
+        <button class="nav-tab-btn" id="tabConvergence">Konvergensi</button>
+        <button class="nav-tab-btn" id="tabInference">Live EKG 12-Lead</button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="dashboard-container" id="dashboardMain">
+
+    <!-- 1. Multi-VM Cluster Topology Grid -->
+    <section class="cluster-grid" id="clusterTopologySection">
+      <!-- VM 1 Server -->
+      <article class="node-card glass server-node" id="nodeVm1">
+        <div class="node-header">
+          <span class="node-title">Server Host</span>
+          <span class="node-badge">Port 8080 / 8501</span>
+        </div>
+        <div class="node-name">VM 1 (Flower Server)</div>
+        <div class="node-ip">10.34.100.114 • Orchestrator</div>
+        <div class="node-meta">
+          <span>Strategy: <strong>FedBB / CBR</strong></span>
+          <span>Status: <strong style="color: var(--accent-emerald);">Online</strong></span>
+        </div>
+      </article>
+
+      <!-- VM 2 Client 1 PTB-XL -->
+      <article class="node-card glass client-ptbxl" id="nodeVm2">
+        <div class="node-header">
+          <span class="node-title">Client 1 (Jerman)</span>
+          <span class="node-badge">Schiller AG</span>
+        </div>
+        <div class="node-name">PTB-XL Dataset</div>
+        <div class="node-ip">10.34.100.122 • 21,799 Sinyal</div>
+        <div class="node-meta">
+          <span>Heterogeneity: <strong>Feature Shift</strong></span>
+          <span>Local Fit: <strong style="color: var(--accent-cyan);">Epoch 3/3</strong></span>
+        </div>
+      </article>
+
+      <!-- VM 3 Client 2 Chapman -->
+      <article class="node-card glass client-chapman" id="nodeVm3">
+        <div class="node-header">
+          <span class="node-title">Client 2 (Tiongkok)</span>
+          <span class="node-badge">GE MUSE</span>
+        </div>
+        <div class="node-name">Chapman-Shaoxing</div>
+        <div class="node-ip">10.34.100.123 • 10,646 Sinyal</div>
+        <div class="node-meta">
+          <span>Heterogeneity: <strong>Label Skew</strong></span>
+          <span>Local Fit: <strong style="color: var(--accent-cyan);">Epoch 3/3</strong></span>
+        </div>
+      </article>
+
+      <!-- VM 4 Client 3 G12EC -->
+      <article class="node-card glass client-g12ec" id="nodeVm4">
+        <div class="node-header">
+          <span class="node-title">Client 3 (Atlanta, AS)</span>
+          <span class="node-badge">SNOMED-CT</span>
+        </div>
+        <div class="node-name">G12EC (CinC 2020)</div>
+        <div class="node-ip">10.34.100.125 • 10,344 Sinyal</div>
+        <div class="node-meta">
+          <span>Heterogeneity: <strong>Length Skew</strong></span>
+          <span>Local Fit: <strong style="color: var(--accent-cyan);">Epoch 3/3</strong></span>
+        </div>
+      </article>
+    </section>
+
+    <!-- 2. Benchmark Summary Metrics Cards -->
+    <section class="metrics-summary-grid" id="metricsSummarySection">
+      <div class="metric-card glass" id="cardMacroF1">
+        <div class="metric-title">
+          <span>EVALUASI GLOBAL</span>
+          <span>BEST: FEDBB</span>
+        </div>
+        <div class="metric-value" id="valMacroF1">0.892</div>
+        <div class="metric-delta">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+          <span>Macro-F1 Score (+4.8% vs FedBN)</span>
+        </div>
+      </div>
+
+      <div class="metric-card glass" id="cardMacroAUROC">
+        <div class="metric-title">
+          <span>DISKRIMINASI MODEL</span>
+          <span>AUROC</span>
+        </div>
+        <div class="metric-value" id="valMacroAUROC">0.941</div>
+        <div class="metric-delta">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+          <span>Macro-AUROC (27 Diagnostic Classes)</span>
+        </div>
+      </div>
+
+      <div class="metric-card glass" id="cardPayloadEfficiency">
+        <div class="metric-title">
+          <span>KOMPUTASI & KOMUNIKASI</span>
+          <span>PAYLOAD</span>
+        </div>
+        <div class="metric-value" id="valPayload">18.4 <span style="font-size: 1.1rem; color: var(--text-muted);">MB</span></div>
+        <div class="metric-delta neutral">
+          <span>ResNet1D Weights / Round</span>
+        </div>
+      </div>
+
+      <div class="metric-card glass" id="cardMinorityRecall">
+        <div class="metric-title">
+          <span>KELAS MINORITAS</span>
+          <span>PNB GAIN</span>
+        </div>
+        <div class="metric-value" id="valMinorityRecall">84.7<span style="font-size: 1.1rem; color: var(--text-muted);">%</span></div>
+        <div class="metric-delta">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+          <span>Recall Tertinggi pada Imbalanced Class</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Convergence & Radar Comparison Section -->
+    <section class="comparison-section" id="comparisonChartsSection">
+      <!-- Line Chart: Convergence Curves -->
+      <div class="chart-card glass" id="chartCardLoss">
+        <div class="chart-header">
+          <div class="chart-title">
+            <h2>Kurva Konvergensi Loss (50 Rounds)</h2>
+            <p>Perbandingan laju penurunan Multi-label BCE Validation Loss antar 3 algoritma</p>
+          </div>
+          <div class="strategy-pills">
+            <span class="strategy-pill pill-fedbn">● FedBN</span>
+            <span class="strategy-pill pill-fedbb">● FedBB</span>
+            <span class="strategy-pill pill-fedsol">● FedSOL</span>
+          </div>
+        </div>
+        <div class="chart-canvas-container">
+          <canvas id="lossConvergenceChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Radar Chart: Per-Class Recall -->
+      <div class="chart-card glass" id="chartCardRadar">
+        <div class="chart-header">
+          <div class="chart-title">
+            <h2>Per-Class Recall Radar</h2>
+            <p>Ketahanan terhadap ketimpangan kelas aritmia</p>
+          </div>
+        </div>
+        <div class="chart-canvas-container">
+          <canvas id="minorityRecallChart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. Interactive 12-Lead ECG Monitor & Multi-Label Inference -->
+    <section class="ecg-viewer-section glass" id="ecgViewerSection">
+      <div class="ecg-control-bar">
+        <div>
+          <h2 style="font-size: 1.2rem; font-weight: 700;">Simulasi Sinyal EKG 12-Lead & Evaluasi Model</h2>
+          <p style="font-size: 0.8rem; color: var(--text-muted);">Dimensi Input: (1, 12, 5000) • 10 Detik @ 500 Hz • Lead Aktif: <strong id="currentLeadDisplay" style="color: var(--accent-cyan);">Lead: II</strong></p>
+        </div>
+
+        <div class="ecg-playback-controls">
+          <button class="btn-ctrl" id="btnTogglePlayback">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+            Pause
+          </button>
+          <button class="btn-ctrl primary" id="btnRunInference">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            Run Model Inference (ResNet1D)
+          </button>
+        </div>
+      </div>
+
+      <!-- 12 Lead Switcher Buttons -->
+      <div class="lead-selector-group" id="leadSelectorContainer">
+        <button class="lead-btn" data-lead="I">Lead I</button>
+        <button class="lead-btn active" data-lead="II">Lead II (Rhythm)</button>
+        <button class="lead-btn" data-lead="III">Lead III</button>
+        <button class="lead-btn" data-lead="aVR">aVR</button>
+        <button class="lead-btn" data-lead="aVL">aVL</button>
+        <button class="lead-btn" data-lead="aVF">aVF</button>
+        <button class="lead-btn" data-lead="V1">V1</button>
+        <button class="lead-btn" data-lead="V2">V2</button>
+        <button class="lead-btn" data-lead="V3">V3</button>
+        <button class="lead-btn" data-lead="V4">V4</button>
+        <button class="lead-btn" data-lead="V5">V5</button>
+        <button class="lead-btn" data-lead="V6">V6</button>
+      </div>
+
+      <!-- ECG Calibrated Medical Grid & Sweep Canvas -->
+      <div class="ecg-monitor-frame" id="ecgMonitorFrame">
+        <div class="ecg-grid-overlay"></div>
+        <div class="ecg-overlay-info">SWEEP SPEED: 25 mm/s | 10 mm/mV | FILTER: 0.05-150Hz NOTCH 50Hz</div>
+        <canvas id="ecgTraceCanvas" class="ecg-canvas"></canvas>
+      </div>
+
+      <!-- Multi-Label Sigmoid Output Prediction Bars -->
+      <div class="prediction-panel" id="predictionPanel">
+        <div>
+          <h3 style="font-size: 0.95rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--accent-cyan);">Klasifikasi Multi-Label (Aktivasi Sigmoid Output)</h3>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">Prediksi probabilitas kehadiran kelainan ritme aritmia jantung secara simultan pada subjek uji.</p>
+          <div class="diagnosis-list" id="diagnosisBarContainer">
+            <!-- Populated dynamically by app.js -->
+          </div>
+        </div>
+
+        <div>
+          <h3 style="font-size: 0.95rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--accent-purple);">Ringkasan Karakteristik 3 Algoritma FL</h3>
+          <div class="benchmark-table-container">
+            <table class="benchmark-table">
+              <thead>
+                <tr>
+                  <th>Algoritma</th>
+                  <th>Target Heterogenitas</th>
+                  <th>Mekanisme Kerja</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong style="color: var(--accent-cyan);">FedBN</strong></td>
+                  <td>Feature / Statistical Shift</td>
+                  <td>Local BatchNorm1d (tanpa agregasi parameter BN)</td>
+                  <td><span class="node-badge">Selesai (50 Rd)</span></td>
+                </tr>
+                <tr>
+                  <td><strong style="color: var(--accent-rose);">FedBB</strong></td>
+                  <td>Class & Client Imbalance</td>
+                  <td>PNB Loss di client + CBR Aggregation di server</td>
+                  <td><span class="node-badge" style="background: rgba(255, 77, 109, 0.2); color: var(--accent-rose); border-color: rgba(255,77,109,0.3);">Optimal</span></td>
+                </tr>
+                <tr>
+                  <td><strong style="color: var(--accent-emerald);">FedSOL</strong></td>
+                  <td>Client Drift</td>
+                  <td>Orthogonal Perturbation & Proximal Restriction</td>
+                  <td><span class="node-badge">Selesai (50 Rd)</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Script Application Logic -->
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

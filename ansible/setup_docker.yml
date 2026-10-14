@@ -1,0 +1,123 @@
+---
+# ==============================================================================
+# PLAYBOOK: Setup Docker Engine & Docker Compose di Ubuntu 24.04 LTS (Noble)
+# ==============================================================================
+- name: Setup Docker Engine & Compose on All FL Nodes (Ubuntu 24.04 Noble)
+  hosts: fl_cluster
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Pastikan sistem operasi adalah Ubuntu 24.04 (Noble)
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution == "Ubuntu"
+          - ansible_distribution_version is version('24.04', '>=')
+        fail_msg: "Playbook ini dioptimalkan khusus untuk Ubuntu 24.04 (Noble). Ditemukan: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+        quiet: true
+      ignore_errors: true
+
+    - name: Update apt cache dan upgrade paket esensial
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Instal dependensi prasyarat instalasi Docker
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - software-properties-common
+          - python3-pip
+          - python3-venv
+          - python3-docker
+          - rsync
+          - git
+          - htop
+        state: present
+
+    - name: Buat direktori keyrings apt
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Download GPG key resmi Docker
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
+        force: false
+
+    - name: Tambahkan repository APT resmi Docker untuk Ubuntu Noble
+      ansible.builtin.apt_repository:
+        repo: "deb [arch={{ ansible_architecture | replace('x86_64', 'amd64') | replace('aarch64', 'arm64') }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu noble stable"
+        state: present
+        filename: docker
+
+    - name: Update apt cache setelah menambah repo Docker
+      ansible.builtin.apt:
+        update_cache: true
+
+    - name: Instal Docker CE, CLI, Containerd, dan Docker Compose Plugin
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: latest
+
+    - name: Konfigurasi Docker Daemon (log rotation & live restore)
+      ansible.builtin.copy:
+        dest: /etc/docker/daemon.json
+        mode: "0644"
+        content: |
+          {
+            "log-driver": "json-file",
+            "log-opts": {
+              "max-size": "50m",
+              "max-file": "3"
+            },
+            "live-restore": true
+          }
+      notify: Restart Docker
+
+    - name: Pastikan service Docker aktif dan otomatis berjalan saat boot
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Tambahkan user remote ke dalam group 'docker'
+      ansible.builtin.user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: true
+
+    - name: Verifikasi instalasi Docker Engine
+      ansible.builtin.command: docker --version
+      register: docker_version_output
+      changed_when: false
+
+    - name: Verifikasi instalasi Docker Compose CLI plugin
+      ansible.builtin.command: docker compose version
+      register: compose_version_output
+      changed_when: false
+
+    - name: Tampilkan versi Docker dan Compose yang berhasil diinstal
+      ansible.builtin.debug:
+        msg:
+          - "Node: {{ inventory_hostname }} ({{ ansible_host }})"
+          - "Docker: {{ docker_version_output.stdout }}"
+          - "Docker Compose: {{ compose_version_output.stdout }}"
+
+  handlers:
+    - name: Restart Docker
+      ansible.builtin.systemd:
+        name: docker
+        state: restarted

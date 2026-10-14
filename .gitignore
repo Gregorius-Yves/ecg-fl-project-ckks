@@ -1,0 +1,43 @@
+# Python & Caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.ipynb_checkpoints/
+venv/
+.venv/
+env/
+
+# Raw Datasets & Large Binary Files
+data/
+raw_data/
+*.mat
+*.hea
+*.dat
+*.tar.gz
+*.zip
+*.csv.gz
+
+# Checkpoints & Model Weights
+checkpoints/
+*.pt
+*.pth
+*.onnx
+
+# Logs & Results
+logs/
+results/
+*.log
+
+# Environment & Credentials
+.env
+.env.*
+!.env.example
+*.pem
+id_rsa*
+
+# IDE & OS
+.DS_Store
+.vscode/
+.idea/

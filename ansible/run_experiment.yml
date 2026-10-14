@@ -1,0 +1,103 @@
+---
+# ==============================================================================
+# PLAYBOOK: Jalankan Eksperimen FL Tertentu (FedBN, FedBB, atau FedSOL)
+# Penggunaan:
+#   ansible-playbook -i inventory.ini run_experiment.yml -e "strategy=fedbn rounds=50"
+#   ansible-playbook -i inventory.ini run_experiment.yml -e "strategy=fedbb rounds=50"
+#   ansible-playbook -i inventory.ini run_experiment.yml -e "strategy=fedsol rounds=50"
+# ==============================================================================
+
+- name: Validasi Parameter Eksperimen
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Cek ketersediaan parameter strategi
+      ansible.builtin.set_fact:
+        current_strategy: "{{ strategy | default(fl_strategy) | lower }}"
+        current_rounds: "{{ rounds | default(fl_num_rounds) | int }}"
+
+    - name: Validasi nama strategi yang didukung
+      ansible.builtin.assert:
+        that:
+          - current_strategy in ['fedbn', 'fedbb', 'fedsol']
+        fail_msg: "Strategi '{{ current_strategy }}' tidak valid! Pilih: fedbn, fedbb, atau fedsol."
+        success_msg: "Memulai Eksperimen FL dengan Strategi: {{ current_strategy }} ({{ current_rounds }} Rounds)"
+
+- name: Hentikan dan Bersihkan Sesi Sebelumnya di Server & Clients
+  hosts: fl_cluster
+  become: true
+  tasks:
+    - name: Stop container Flower jika sedang berjalan
+      community.docker.docker_container:
+        name: "{{ item }}"
+        state: absent
+        force_kill: true
+      loop:
+        - fl-server
+        - fl-client-ptbxl
+        - fl-client-chapman
+        - fl-client-g12ec
+      ignore_errors: true
+
+- name: Mulai FL Server untuk Eksperimen {{ strategy | default('fedbn') | upper }}
+  hosts: server
+  become: true
+  tasks:
+    - name: Jalankan Server Container
+      community.docker.docker_container:
+        name: fl-server
+        image: "{{ server_image_name }}"
+        state: started
+        restart_policy: "no"
+        ports:
+          - "{{ fl_server_port }}:8080"
+        volumes:
+          - "{{ checkpoints_dir_remote }}:/app/checkpoints"
+          - "{{ logs_dir_remote }}:/app/logs"
+        env:
+          SERVER_HOST: "0.0.0.0"
+          SERVER_PORT: "8080"
+          STRATEGY: "{{ strategy | default(fl_strategy) | lower }}"
+          NUM_ROUNDS: "{{ rounds | default(fl_num_rounds) | string }}"
+          MIN_FIT_CLIENTS: "{{ fl_min_fit_clients | string }}"
+          MIN_AVAILABLE_CLIENTS: "{{ fl_min_available_clients | string }}"
+          CHECKPOINT_DIR: "/app/checkpoints"
+          LOG_DIR: "/app/logs"
+          NUM_CLASSES: "{{ num_classes | string }}"
+
+    - name: Tunggu hingga Server gRPC siap (Port 8080)
+      ansible.builtin.wait_for:
+        host: "{{ fl_server_ip }}"
+        port: "{{ fl_server_port }}"
+        state: started
+        delay: 2
+        timeout: 45
+
+- name: Hubungkan Semua Client (VM 2, 3, 4) ke Server
+  hosts: clients
+  become: true
+  tasks:
+    - name: Jalankan Client Container ({{ dataset_label }})
+      community.docker.docker_container:
+        name: "{{ container_name }}"
+        image: "{{ client_image_name }}"
+        state: started
+        restart_policy: "no"
+        volumes:
+          - "{{ data_dir }}:/app/data:ro"
+          - "{{ logs_dir_remote }}:/app/logs"
+        env:
+          SERVER_ADDRESS: "{{ server_address }}"
+          CLIENT_ID: "{{ client_id | string }}"
+          DATASET_NAME: "{{ dataset_name }}"
+          DATA_DIR: "/app/data"
+          LOG_DIR: "/app/logs"
+          STRATEGY: "{{ strategy | default(fl_strategy) | lower }}"
+          BATCH_SIZE: "{{ fl_batch_size | string }}"
+          LOCAL_EPOCHS: "{{ fl_local_epochs | string }}"
+          LEARNING_RATE: "{{ fl_learning_rate | string }}"
+          NUM_CLASSES: "{{ num_classes | string }}"
+
+    - name: Cetak info status peluncuran
+      ansible.builtin.debug:
+        msg: "Client {{ dataset_name }} ({{ ansible_host }}) terhubung ke {{ server_address }} untuk strategi {{ strategy | default(fl_strategy) }}!"

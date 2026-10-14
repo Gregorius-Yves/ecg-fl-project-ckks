@@ -1,0 +1,40 @@
+---
+# ==============================================================================
+# GLOBAL VARIABLES UNTUK FL CLUSTER BENCHMARK EKG
+# ==============================================================================
+
+# Git & Directory Settings
+git_repo_url: "https://github.com/Jeijesh/ecg-fl-project.git"
+git_branch: "main"
+use_git_clone: true # Clone repo dari GitHub ke tiap VM
+project_root_remote: "/opt/ecg-fl-project"
+checkpoints_dir_remote: "{{ project_root_remote }}/checkpoints"
+logs_dir_remote: "{{ project_root_remote }}/logs"
+
+# FL Network Settings
+fl_server_ip: "10.34.100.114"
+fl_server_port: 8080
+fl_dashboard_port: 8501
+server_address: "{{ fl_server_ip }}:{{ fl_server_port }}"
+
+# Experiment Hyperparameters Default
+fl_strategy: "fedbn" # Opsi: "fedbn", "fedbb", "fedsol"
+fl_num_rounds: 50
+fl_min_fit_clients: 3
+fl_min_available_clients: 3
+fl_batch_size: 32
+fl_local_epochs: 3
+fl_learning_rate: 0.001
+
+# Model & Signal Preprocessing Specifications
+signal_sampling_rate: 500
+signal_duration_sec: 10
+signal_samples: 5000
+num_leads: 12
+num_classes: 27 # Multilabel cardiology classes harmonized (misal SNOMED / SCP-ECG)
+
+# Docker Settings
+docker_network_name: "fl-net"
+server_image_name: "ecg-fl-server:latest"
+dashboard_image_name: "ecg-fl-dashboard:latest"
+client_image_name: "ecg-fl-client:latest"

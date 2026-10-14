@@ -1,0 +1,14 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Install lightweight dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY . .
+
+EXPOSE 8501
+
+CMD ["python3", "src/ui/server.py"]
