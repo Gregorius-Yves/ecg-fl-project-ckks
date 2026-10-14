@@ -170,7 +170,7 @@ def main():
     parser.add_argument("--epochs", type=int, default=int(os.environ.get("LOCAL_EPOCHS", 3)))
     args = parser.parse_args()
 
-    print(f"🏥 Starting ECG Client: {args.dataset.upper()} (ID: {args.client_id})")
+    print(f"\n🏥 Starting ECG Client: {args.dataset.upper()} (ID: {args.client_id})")
     print(f"🔗 Target Server: {args.server} | Strategy: {args.strategy.upper()}")
 
     client = ECGFlowerClient(
@@ -181,7 +181,20 @@ def main():
         epochs=args.epochs
     )
 
-    fl.client.start_numpy_client(server_address=args.server, client=client)
+    # Auto-reconnect loop: Klien tetap standby jika server menjalankan eksperimen berurutan (FedBN -> FedBB -> FedSOL)
+    import time
+    while True:
+        try:
+            print("⏳ Menghubungkan ke Flower Server...", flush=True)
+            fl.client.start_numpy_client(server_address=args.server, client=client)
+            print("🏁 Sesi eksperimen selesai. Standby menunggu ronde/strategi berikutnya...", flush=True)
+            time.sleep(3)
+        except KeyboardInterrupt:
+            print("\n🛑 Klien dihentikan oleh pengguna.")
+            break
+        except Exception as e:
+            print(f"⚠️ Terputus dari server ({e}). Mencoba menyambung kembali dalam 5 detik...", flush=True)
+            time.sleep(5)
 
 
 if __name__ == "__main__":

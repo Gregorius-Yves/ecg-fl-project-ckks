@@ -58,6 +58,33 @@ def get_strategy(strategy_name: str, num_rounds: int, min_fit_clients: int, min_
         print(f"⚠️ Strategy '{strategy_name}' unrecognized, defaulting to FedAvg")
         return fl.server.strategy.FedAvg(**common_args)
 
+def run_single_strategy(strategy_name: str, num_rounds: int, server_address: str, min_clients: int):
+    print(f"\n==================================================================")
+    print(f"🏥 Memulai Sesi FL: {strategy_name.upper()} ({num_rounds} Rounds)")
+    print(f"==================================================================")
+
+    model = ResNet1D(in_channels=12, num_classes=27)
+    exclude_bn = (strategy_name.lower() == "fedbn")
+    state_dict = get_model_parameters(model, exclude_bn=exclude_bn)
+    initial_ndarrays = [val.cpu().numpy() for val in state_dict.values()]
+    initial_params = ndarrays_to_parameters(initial_ndarrays)
+
+    strategy = get_strategy(
+        strategy_name=strategy_name,
+        num_rounds=num_rounds,
+        min_fit_clients=min_clients,
+        min_available_clients=min_clients,
+        initial_params=initial_params
+    )
+
+    fl.server.start_server(
+        server_address=server_address,
+        config=fl.server.ServerConfig(num_rounds=num_rounds),
+        strategy=strategy
+    )
+    print(f"✅ Selesai Sesi Eksperimen: {strategy_name.upper()}!\n")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Flower ECG FL Server")
     parser.add_argument("--strategy", type=str, default=os.environ.get("STRATEGY", "fedbn"))
@@ -68,31 +95,17 @@ def main():
     args = parser.parse_args()
 
     server_address = f"{args.host}:{args.port}"
-    print(f"🏥 Starting ECG FL Server on {server_address}")
-    print(f"📊 Strategy: {args.strategy.upper()} | Communication Rounds: {args.rounds}")
 
-    # Inisialisasi model awal ResNet1D
-    model = ResNet1D(in_channels=12, num_classes=27)
-    
-    # Untuk FedBN, initial parameters hanya menyertakan non-BN weights
-    exclude_bn = (args.strategy.lower() == "fedbn")
-    state_dict = get_model_parameters(model, exclude_bn=exclude_bn)
-    initial_ndarrays = [val.cpu().numpy() for val in state_dict.values()]
-    initial_params = ndarrays_to_parameters(initial_ndarrays)
+    if args.strategy.lower() == "all":
+        print(f"🚀 [BENCHMARK SEMUA STRATEGI] Menjalankan 3 Algoritma Berturutan:")
+        print(f"   1. FedBN -> 2. FedBB -> 3. FedSOL (Masing-masing {args.rounds} Rounds)")
+        strategies = ["fedbn", "fedbb", "fedsol"]
+        for s in strategies:
+            run_single_strategy(s, args.rounds, server_address, args.min_clients)
+        print("🎉 SELURUH BENCHMARK KOMPARATIF SELESAI (FedBN + FedBB + FedSOL)!")
+    else:
+        run_single_strategy(args.strategy, args.rounds, server_address, args.min_clients)
 
-    strategy = get_strategy(
-        strategy_name=args.strategy,
-        num_rounds=args.rounds,
-        min_fit_clients=args.min_clients,
-        min_available_clients=args.min_clients,
-        initial_params=initial_params
-    )
-
-    fl.server.start_server(
-        server_address=server_address,
-        config=fl.server.ServerConfig(num_rounds=args.rounds),
-        strategy=strategy
-    )
 
 if __name__ == "__main__":
     main()
