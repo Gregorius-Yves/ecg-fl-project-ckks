@@ -95,13 +95,29 @@ class ECGFlowerClient(fl.client.NumPyClient):
         self.model.load_state_dict(state_dict)
 
     def fit(self, parameters, config):
+        # Otomatis baca instruksi strategi dan hyperparameter dari Server Pusat
+        server_strategy = config.get("strategy", self.strategy).lower()
+        server_round = config.get("current_round", 1)
+        epochs = config.get("local_epochs", self.epochs)
+
+        self.strategy = server_strategy
+        print(f"\n📢 [ROUND {server_round}] Instruksi dari Server: Menjalankan Strategi '{self.strategy.upper()}' ({epochs} epoch)")
+
+        # Sesuaikan Loss Function & Optimizer sesuai perintah Server
+        if self.strategy == "fedbb":
+            self.criterion = PNBLoss()
+        else:
+            self.criterion = nn.BCEWithLogitsLoss()
+
         self.set_parameters(parameters)
         if self.strategy == "fedsol":
             self.global_model.load_state_dict(self.model.state_dict())
+            if not hasattr(self, "fedsol_opt"):
+                self.fedsol_opt = FedSOLOptimizer(self.model, self.global_model, lr=self.lr)
 
         self.model.train()
         total_loss = 0.0
-        for epoch in range(self.epochs):
+        for epoch in range(epochs):
             for x, y in self.train_loader:
                 x, y = x.to(self.device), y.to(self.device)
 
@@ -119,11 +135,12 @@ class ECGFlowerClient(fl.client.NumPyClient):
                 total_loss += loss.item()
 
         num_examples = len(self.train_loader.dataset)
-        avg_loss = total_loss / (self.epochs * len(self.train_loader))
+        avg_loss = total_loss / (epochs * len(self.train_loader))
         metrics = {
             "loss": float(avg_loss),
             "client_id": self.client_id,
             "dataset": self.dataset_name,
+            "strategy": self.strategy,
             "balance_score": 1.0
         }
         return self.get_parameters(config={}), num_examples, metrics
@@ -148,7 +165,7 @@ def main():
     parser.add_argument("--server", type=str, default=os.environ.get("SERVER_ADDRESS", "10.34.100.114:8080"))
     parser.add_argument("--client_id", type=str, default=os.environ.get("CLIENT_ID", "1"))
     parser.add_argument("--dataset", type=str, default=os.environ.get("DATASET_NAME", "ptbxl"))
-    parser.add_argument("--strategy", type=str, default=os.environ.get("STRATEGY", "fedbn"))
+    parser.add_argument("--strategy", type=str, default=os.environ.get("STRATEGY", "auto"), help="Strategi FL (otomatis dikontrol oleh server jika 'auto')")
     parser.add_argument("--batch_size", type=int, default=int(os.environ.get("BATCH_SIZE", 32)))
     parser.add_argument("--epochs", type=int, default=int(os.environ.get("LOCAL_EPOCHS", 3)))
     args = parser.parse_args()

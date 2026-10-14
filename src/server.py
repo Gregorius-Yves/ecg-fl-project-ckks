@@ -23,6 +23,17 @@ from src.strategies.fedsol import FedSOLStrategy
 
 def get_strategy(strategy_name: str, num_rounds: int, min_fit_clients: int, min_available_clients: int, initial_params):
     strategy_name = strategy_name.lower()
+
+    def fit_config(server_round: int):
+        """Kirim instruksi strategi dan hyperparameter ke semua klien dari server pusat"""
+        return {
+            "current_round": server_round,
+            "strategy": strategy_name,
+            "local_epochs": 3,
+            "batch_size": 32,
+            "lr": 0.001
+        }
+
     common_args = {
         "fraction_fit": 1.0,
         "fraction_evaluate": 1.0,
@@ -30,6 +41,8 @@ def get_strategy(strategy_name: str, num_rounds: int, min_fit_clients: int, min_
         "min_evaluate_clients": min_fit_clients,
         "min_available_clients": min_available_clients,
         "initial_parameters": initial_params,
+        "on_fit_config_fn": fit_config,
+        "on_evaluate_config_fn": fit_config,
     }
 
     if strategy_name == "fedbn":
