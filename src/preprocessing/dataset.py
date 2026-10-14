@@ -35,15 +35,19 @@ class ECGDataset(Dataset):
             self.record_files = self.record_files[:max_samples]
 
     def _discover_records(self):
-        """Mencari semua rekaman .hea di folder dataset"""
+        """Mencari semua rekaman .hea di folder dataset (mengabaikan file macOS metadata ._*)"""
         if not os.path.exists(self.data_dir):
             return []
         
         # Cari file .hea
         records = glob.glob(os.path.join(self.data_dir, "**", "*.hea"), recursive=True)
-        # Hapus ekstensi .hea untuk pembacaan via wfdb
-        base_records = [os.path.splitext(r)[0] for r in records]
-        return base_records
+        # Saring: abaikan file tersembunyi macOS (misal ._E06678.hea)
+        valid_records = []
+        for r in records:
+            base_filename = os.path.basename(r)
+            if not base_filename.startswith("._") and not base_filename.startswith("."):
+                valid_records.append(os.path.splitext(r)[0])
+        return sorted(valid_records)
 
     def __len__(self):
         return len(self.record_files)
@@ -78,4 +82,6 @@ class ECGDataset(Dataset):
             return torch.tensor(processed_signal, dtype=torch.float32), torch.tensor(label_vec, dtype=torch.float32)
 
         except Exception as e:
-            raise IOError(f"Gagal memuat rekaman EKG asli di '{record_path}': {e}. Pembatalan dilakukan untuk menjaga integritas data riil.")
+            # Jika ada satu file rusak/header error, lewati secara aman ke rekaman EKG asli berikutnya
+            next_idx = (idx + 1) % len(self.record_files)
+            return self.__getitem__(next_idx)

@@ -117,8 +117,11 @@ class ECGFlowerClient(fl.client.NumPyClient):
 
         self.model.train()
         total_loss = 0.0
+        total_batches = len(self.train_loader)
+
         for epoch in range(epochs):
-            for x, y in self.train_loader:
+            running_epoch_loss = 0.0
+            for batch_idx, (x, y) in enumerate(self.train_loader):
                 x, y = x.to(self.device), y.to(self.device)
 
                 if self.strategy == "fedsol":
@@ -133,6 +136,13 @@ class ECGFlowerClient(fl.client.NumPyClient):
                     self.optimizer.step()
 
                 total_loss += loss.item()
+                running_epoch_loss += loss.item()
+
+                # Cetak progress setiap 25 batch agar terlihat aktif di terminal
+                if (batch_idx + 1) % 25 == 0 or (batch_idx + 1) == total_batches:
+                    avg_b_loss = running_epoch_loss / (batch_idx + 1)
+                    pct = ((batch_idx + 1) / total_batches) * 100
+                    print(f"   [Epoch {epoch+1}/{epochs}] Batch {batch_idx+1}/{total_batches} ({pct:.1f}%) | Batch Loss: {loss.item():.4f} (Avg: {avg_b_loss:.4f})", flush=True)
 
         num_examples = len(self.train_loader.dataset)
         avg_loss = total_loss / (epochs * len(self.train_loader))
