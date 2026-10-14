@@ -5,6 +5,12 @@ Supports FedBN, FedBB, and FedSOL strategies.
 """
 
 import os
+import sys
+from pathlib import Path
+
+# Pastikan root direktori selalu ada di Python path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import argparse
 import flwr as fl
 import torch
