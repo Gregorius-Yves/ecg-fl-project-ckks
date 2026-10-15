@@ -304,12 +304,24 @@ def main():
         try:
             print("⏳ Menghubungkan ke Flower Server...", flush=True)
             fl.client.start_numpy_client(server_address=args.server, client=client)
+            client.current_status = "online"
+            client.current_detail = "Online (Standby)"
+            client.current_round = 0
+            client.current_epoch = 0
+            client.current_batch = 0
+            client.current_round_start_time = 0.0
             print("🏁 Sesi eksperimen selesai. Standby menunggu ronde/strategi berikutnya...", flush=True)
             time.sleep(3)
         except KeyboardInterrupt:
             print("\n🛑 Klien dihentikan oleh pengguna.")
             break
         except Exception as e:
+            client.current_status = "online"
+            client.current_detail = "Online (Standby)"
+            client.current_round = 0
+            client.current_epoch = 0
+            client.current_batch = 0
+            client.current_round_start_time = 0.0
             print(f"⚠️ Terputus dari server ({e}). Mencoba menyambung kembali dalam 5 detik...", flush=True)
             time.sleep(5)
 

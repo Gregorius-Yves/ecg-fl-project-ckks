@@ -465,7 +465,7 @@ function updateClientStatuses(clients, connectedCount, totalClients) {
         timing.textContent = 'Offline';
         timing.style.color = '#94a3b8';
       }
-    } else if (client.status === 'training') {
+    } else if (client.status === 'training' && appState.isRunning) {
       if (badge) {
         badge.className = 'badge-status training';
         badge.textContent = client.status_label || 'Training';
@@ -481,19 +481,19 @@ function updateClientStatuses(clients, connectedCount, totalClients) {
     } else {
       if (badge) {
         badge.className = 'badge-status online';
-        badge.textContent = client.status_label || 'Online';
+        badge.textContent = appState.isRunning ? (client.status_label || 'Online') : 'Online (Standby)';
       }
       if (card) {
         card.classList.remove('is-offline');
         card.classList.remove('is-training');
       }
       if (timing) {
-        if (client.measured_duration && client.measured_duration > 0) {
+        if (appState.isRunning && client.measured_duration && client.measured_duration > 0) {
           const s = Math.round(client.measured_duration);
           const m = (client.measured_duration / 60).toFixed(1);
           timing.innerHTML = `Terukur: <span style="color:#059669;font-weight:700;">${s}s</span> (${m} mnt/ronde)`;
         } else {
-          timing.textContent = 'Standby (Menunggu ronde)';
+          timing.textContent = 'Menunggu Ronde 1...';
           timing.style.color = '#64748b';
         }
       }

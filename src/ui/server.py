@@ -99,7 +99,7 @@ class ClientTracker:
         return active_ips
 
     @classmethod
-    def get_all_status(cls):
+    def get_all_status(cls, is_server_active=True):
         now = time.time()
         active_tcp_ips = cls.get_established_connections()
         result = {}
@@ -114,7 +114,11 @@ class ClientTracker:
             if is_recent_heartbeat:
                 raw_status = hb.get("status", "online")
                 detail = hb.get("detail", "Online")
-                status = "training" if raw_status == "training" else "online"
+                if is_server_active:
+                    status = "training" if raw_status == "training" else "online"
+                else:
+                    status = "online"
+                    detail = "Online (Standby)"
                 connected_count += 1
             elif is_active_tcp:
                 status = "online"
@@ -132,8 +136,8 @@ class ClientTracker:
                 "status": status,
                 "status_label": detail,
                 "last_seen": hb["last_seen"] if hb else None,
-                "measured_duration": hb.get("measured_duration", 0) if hb else 0,
-                "elapsed_in_round": hb.get("elapsed_in_round", 0) if hb else 0
+                "measured_duration": (hb.get("measured_duration", 0) if is_server_active else 0),
+                "elapsed_in_round": (hb.get("elapsed_in_round", 0) if is_server_active else 0)
             }
 
         return result, connected_count
@@ -252,7 +256,7 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
             return
 
         elif self.path == "/api/experiment/reset":
-            # Hentikan proses jika masih ada yang berjalan
+            # Hentikan semua proses Flower server (baik yang via UI maupun manual CLI)
             if pm.server_process and pm.server_process.poll() is None:
                 try:
                     pm.server_process.terminate()
@@ -262,6 +266,11 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
             pm.server_process = None
             pm.start_time = None
             pm.round_timestamps = {}
+
+            try:
+                subprocess.run(["pkill", "-9", "-f", "src.server"], timeout=1)
+            except Exception:
+                pass
 
             # Bersihkan file log dan timing
             try:
@@ -336,13 +345,13 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
                 return False
 
             is_running = is_flower_server_active()
-            clients_status, connected_count = ClientTracker.get_all_status()
+            clients_status, connected_count = ClientTracker.get_all_status(is_server_active=is_running)
 
             # Baca round_timing.json untuk waktu nyata tiap ronde
             timing_file = BASE_DIR / "logs" / "round_timing.json"
             timing_data = {}
             completed_durations = []
-            if timing_file.exists():
+            if is_running and timing_file.exists():
                 try:
                     with open(timing_file, "r") as f:
                         timing_data = json.load(f)
@@ -352,9 +361,9 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
                 except Exception:
                     pass
 
-            # Ekstrak current_round dari log atau data timing jika server aktif
+            # Ekstrak current_round HANYA jika server aktif
             current_round = 0
-            if timing_data:
+            if is_running and timing_data:
                 try:
                     current_round = max(int(k) for k in timing_data.keys() if k.isdigit())
                 except Exception:
