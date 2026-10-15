@@ -251,6 +251,49 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"status": "stopped"}).encode("utf-8"))
             return
 
+        elif self.path == "/api/experiment/reset":
+            # Hentikan proses jika masih ada yang berjalan
+            if pm.server_process and pm.server_process.poll() is None:
+                try:
+                    pm.server_process.terminate()
+                    pm.server_process.wait(timeout=2)
+                except Exception:
+                    pm.server_process.kill()
+            pm.server_process = None
+            pm.start_time = None
+            pm.round_timestamps = {}
+
+            # Bersihkan file log dan timing
+            try:
+                with open(SERVER_LOG_FILE, "w", encoding="utf-8") as f:
+                    f.write("Sesi di-reset. Siap memulai eksperimen baru.\n")
+            except Exception:
+                pass
+
+            timing_file = BASE_DIR / "logs" / "round_timing.json"
+            if timing_file.exists():
+                try:
+                    timing_file.unlink()
+                except Exception:
+                    pass
+
+            # Reset status dan log pada ClientTracker
+            ClientTracker.client_logs = {"vm2": "", "vm3": "", "vm4": ""}
+            for k in ClientTracker.heartbeats:
+                ClientTracker.heartbeats[k]["status"] = "online"
+                ClientTracker.heartbeats[k]["detail"] = "Online (Standby)"
+                ClientTracker.heartbeats[k]["current_round"] = 0
+                ClientTracker.heartbeats[k]["epoch"] = 0
+                ClientTracker.heartbeats[k]["batch"] = 0
+                ClientTracker.heartbeats[k]["measured_duration"] = 0
+                ClientTracker.heartbeats[k]["elapsed_in_round"] = 0
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "reset", "message": "Sesi dan log berhasil di-reset"}).encode("utf-8"))
+            return
+
         elif self.path == "/api/client/heartbeat":
             content_length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(content_length)

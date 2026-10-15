@@ -313,16 +313,74 @@ function setupEventListeners() {
 
   // Reset Button
   const btnReset = document.getElementById('btnResetExperiment');
-  btnReset.addEventListener('click', () => {
+  btnReset.addEventListener('click', async () => {
     if (appState.isRunning) {
-      alert('Hentikan pelatihan terlebih dahulu sebelum melakukan reset!');
-      return;
+      const confirmReset = confirm('Pelatihan sedang berjalan. Apakah Anda yakin ingin menghentikan dan mereset seluruh sesi & UI?');
+      if (!confirmReset) return;
     }
-    appState.metricsHistory = { rounds: [], loss: [], val_loss: [], f1_macro: [], auroc: [] };
+
+    btnReset.disabled = true;
+    btnReset.textContent = 'Mereset...';
+
+    try {
+      await fetch('/api/experiment/reset', { method: 'POST' });
+    } catch (e) {
+      console.warn('Reset request error:', e);
+    }
+
+    // 1. Reset State
+    setServerRunningState(false);
     appState.currentRound = 0;
+    appState.metricsHistory = {
+      rounds: [],
+      loss: [],
+      val_loss: [],
+      f1_macro: [],
+      auroc: [],
+      ptbxl: { loss: [], f1_macro: [], auroc: [] },
+      chapman: { loss: [], f1_macro: [], auroc: [] },
+      g12ec: { loss: [], f1_macro: [], auroc: [] }
+    };
+
+    // 2. Reset Chart Visuals
+    if (metricChart) {
+      metricChart.data.labels = [];
+      metricChart.data.datasets.forEach(ds => {
+        ds.data = [];
+      });
+      metricChart.update();
+    }
+
+    // 3. Reset Progress Bar
     updateProgressBar(0, appState.totalRounds);
-    switchMetricTab(appState.activeMetric);
-    document.getElementById('logStreamBox').textContent = 'Sesi di-reset. Siap memulai eksperimen baru.';
+    const roundText = document.getElementById('progressRoundText');
+    const percentText = document.getElementById('progressPercentText');
+    const barFill = document.getElementById('progressBarFill');
+    if (roundText) roundText.textContent = 'Ronde Federasi: Menunggu Memulai...';
+    if (percentText) percentText.textContent = '0%';
+    if (barFill) barFill.style.width = '0%';
+
+    // 4. Reset Live ETA & Speed Text
+    const etaEl = document.getElementById('progressEtaText');
+    const speedEl = document.getElementById('progressSpeedText');
+    if (etaEl) etaEl.textContent = 'Siap dimulai';
+    if (speedEl) speedEl.textContent = 'Laju: --';
+
+    // 5. Reset Timing pada Tiap Kartu Node Klien
+    ['timingVm2', 'timingVm3', 'timingVm4'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.textContent = 'Menunggu Ronde 1...';
+        el.style.color = '#64748b';
+      }
+    });
+
+    // 6. Reset Log Box & Button Text
+    const logBox = document.getElementById('logStreamBox');
+    if (logBox) logBox.textContent = 'Sesi telah di-reset bersih. Siap memulai eksperimen baru.';
+
+    btnReset.disabled = false;
+    btnReset.textContent = 'Reset';
   });
 
   // Download Model Checkpoint
