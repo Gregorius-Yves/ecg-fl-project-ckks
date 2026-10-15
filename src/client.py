@@ -66,6 +66,8 @@ class HeartbeatThread(threading.Thread):
                     "current_round": getattr(self.client, "current_round", 0),
                     "epoch": getattr(self.client, "current_epoch", 0),
                     "batch": getattr(self.client, "current_batch", 0),
+                    "measured_duration": getattr(self.client, "last_round_duration", 0),
+                    "elapsed_in_round": round(time.time() - getattr(self.client, "current_round_start_time", time.time()), 1) if getattr(self.client, "current_status", "") == "training" else 0,
                     "logs": "".join(recent_logs)
                 }
                 data = json.dumps(payload).encode("utf-8")
@@ -96,12 +98,14 @@ class ECGFlowerClient(fl.client.NumPyClient):
         self.epochs = epochs
         self.lr = lr
 
-        # Status tracking untuk Dashboard
+        # Status tracking untuk Dashboard & estimasi waktu nyata
         self.current_status = "online"
         self.current_detail = "Online (Standby)"
         self.current_round = 0
         self.current_epoch = 0
         self.current_batch = 0
+        self.current_round_start_time = 0.0
+        self.last_round_duration = 0.0
         self.log_history = collections.deque(maxlen=40)
         self.log_history.append(f"🏥 Klien {self.dataset_name.upper()} (ID: {self.client_id}) aktif & siap.")
 
@@ -171,6 +175,8 @@ class ECGFlowerClient(fl.client.NumPyClient):
         server_round = config.get("current_round", 1)
         epochs = config.get("local_epochs", self.epochs)
 
+        t_round_start = time.time()
+        self.current_round_start_time = t_round_start
         self.strategy = server_strategy
         self.current_round = server_round
         self.current_status = "training"
@@ -216,23 +222,29 @@ class ECGFlowerClient(fl.client.NumPyClient):
                 if (batch_idx + 1) % 25 == 0 or (batch_idx + 1) == total_batches:
                     avg_b_loss = running_epoch_loss / (batch_idx + 1)
                     pct = ((batch_idx + 1) / total_batches) * 100
+                    elapsed_so_far = round(time.time() - t_round_start, 1)
                     self.current_epoch = epoch + 1
                     self.current_batch = batch_idx + 1
-                    self.current_detail = f"Ronde {server_round} (Ep {epoch+1}/{epochs} - {pct:.0f}%)"
-                    msg = f"   [Epoch {epoch+1}/{epochs}] Batch {batch_idx+1}/{total_batches} ({pct:.1f}%) | Batch Loss: {loss.item():.4f} (Avg: {avg_b_loss:.4f})"
+                    self.current_detail = f"Ronde {server_round} (Ep {epoch+1}/{epochs} - {pct:.0f}% | {elapsed_so_far}s)"
+                    msg = f"   [Epoch {epoch+1}/{epochs}] Batch {batch_idx+1}/{total_batches} ({pct:.1f}%) | Batch Loss: {loss.item():.4f} (Avg: {avg_b_loss:.4f}) | Waktu: {elapsed_so_far}s"
                     self.log_history.append(msg)
                     print(msg, flush=True)
 
         num_examples = len(self.train_loader.dataset)
         avg_loss = total_loss / (epochs * len(self.train_loader))
+        round_duration = round(time.time() - t_round_start, 2)
+        self.last_round_duration = round_duration
         self.current_status = "online"
-        self.current_detail = f"Selesai Ronde {server_round} (Standby)"
+        self.current_detail = f"Selesai Ronde {server_round} ({round_duration}s) - Standby"
+        print(f"⏱️ [ROUND {server_round}] Pelatihan lokal selesai dalam {round_duration} detik ({round_duration/60:.2f} menit). Siap kirim ke server.", flush=True)
+
         metrics = {
             "loss": float(avg_loss),
             "client_id": self.client_id,
             "dataset": self.dataset_name,
             "strategy": self.strategy,
-            "balance_score": 1.0
+            "balance_score": 1.0,
+            "round_duration": float(round_duration)
         }
         return self.get_parameters(config={}), num_examples, metrics
 

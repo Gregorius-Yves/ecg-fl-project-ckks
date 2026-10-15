@@ -66,7 +66,9 @@ class ClientTracker:
                 "detail": data.get("detail", "Online"),
                 "current_round": data.get("current_round", 0),
                 "epoch": data.get("epoch", 0),
-                "batch": data.get("batch", 0)
+                "batch": data.get("batch", 0),
+                "measured_duration": data.get("measured_duration", 0),
+                "elapsed_in_round": data.get("elapsed_in_round", 0)
             }
 
     @classmethod
@@ -123,7 +125,9 @@ class ClientTracker:
                 "dataset": info["dataset"],
                 "status": status,
                 "status_label": detail,
-                "last_seen": hb["last_seen"] if hb else None
+                "last_seen": hb["last_seen"] if hb else None,
+                "measured_duration": hb.get("measured_duration", 0) if hb else 0,
+                "elapsed_in_round": hb.get("elapsed_in_round", 0) if hb else 0
             }
 
         return result, connected_count
@@ -265,11 +269,48 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
             return super().do_GET()
 
         elif self.path == "/api/status":
-            is_running = bool(pm.server_process and pm.server_process.poll() is None)
+            def is_flower_server_active():
+                if pm.server_process and pm.server_process.poll() is None:
+                    return True
+                try:
+                    res = subprocess.run(["pgrep", "-f", "src.server"], capture_output=True, text=True, timeout=0.5)
+                    if res.returncode == 0 and res.stdout.strip():
+                        return True
+                except Exception:
+                    pass
+                try:
+                    res = subprocess.run(["ss", "-Hln", "sport", "=", ":8080"], capture_output=True, text=True, timeout=0.5)
+                    if "8080" in res.stdout:
+                        return True
+                except Exception:
+                    pass
+                return False
+
+            is_running = is_flower_server_active()
             clients_status, connected_count = ClientTracker.get_all_status()
 
-            # Ekstrak current_round dari log jika server aktif
+            # Baca round_timing.json untuk waktu nyata tiap ronde
+            timing_file = BASE_DIR / "logs" / "round_timing.json"
+            timing_data = {}
+            completed_durations = []
+            if timing_file.exists():
+                try:
+                    with open(timing_file, "r") as f:
+                        timing_data = json.load(f)
+                        for r_k, r_v in timing_data.items():
+                            if isinstance(r_v, dict) and "duration" in r_v and r_v["duration"] > 0:
+                                completed_durations.append(float(r_v["duration"]))
+                except Exception:
+                    pass
+
+            # Ekstrak current_round dari log atau data timing jika server aktif
             current_round = 0
+            if timing_data:
+                try:
+                    current_round = max(int(k) for k in timing_data.keys() if k.isdigit())
+                except Exception:
+                    pass
+
             metrics_history = {
                 "rounds": [],
                 "loss": [],
@@ -291,9 +332,8 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
                                 if len(parts) > 1:
                                     rnd_str = parts[1].split("]")[0].split("/")[0]
                                     if rnd_str.isdigit():
-                                        current_round = int(rnd_str)
+                                        current_round = max(current_round, int(rnd_str))
 
-                    # Jika running atau ada data ronde, generate kurva konvergensi halus (Global & Per-Klien)
                     if current_round > 0:
                         rounds = list(range(1, current_round + 1))
                         metrics_history["rounds"] = rounds
@@ -319,28 +359,9 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
                 except Exception:
                     pass
 
-            # Kalkulasi Estimasi Waktu Selesai (ETA)
+            # Kalkulasi Estimasi Waktu Selesai (ETA) berdasarkan durasi NYATA
             total_rounds = pm.config.get("num_rounds", 50)
             elapsed_sec = int(time.time() - pm.start_time) if (is_running and pm.start_time) else 0
-
-            # Catat timestamp saat ronde baru terdeteksi
-            if is_running and current_round > 0 and current_round not in pm.round_timestamps:
-                pm.round_timestamps[current_round] = time.time()
-
-            if is_running and current_round > 1 and len(pm.round_timestamps) >= 2:
-                r_keys = sorted(pm.round_timestamps.keys())
-                t_first = pm.round_timestamps[r_keys[0]]
-                t_last = pm.round_timestamps[r_keys[-1]]
-                rounds_done = r_keys[-1] - r_keys[0]
-                avg_sec_per_round = max(30.0, (t_last - t_first) / max(1, rounds_done))
-            elif is_running:
-                # Estimasi awal untuk input 100 Hz (~120 detik per ronde di VM 2 PTB-XL)
-                avg_sec_per_round = 120.0
-            else:
-                avg_sec_per_round = 120.0
-
-            remaining_rounds = max(0, total_rounds - current_round)
-            eta_seconds = int(remaining_rounds * avg_sec_per_round) if is_running else 0
 
             def format_duration(seconds: int) -> str:
                 if seconds <= 0:
@@ -355,9 +376,38 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
                 else:
                     return f"{s} detik"
 
-            eta_formatted = format_duration(eta_seconds) if is_running else "Siap dimulai"
+            current_round_start = timing_data.get(str(current_round), {}).get("start") if timing_data else None
+            remaining_rounds = max(0, total_rounds - current_round)
+
+            if len(completed_durations) >= 1:
+                # 1 ronde atau lebih sudah selesai dan terukur secara nyata
+                avg_sec_per_round = sum(completed_durations) / len(completed_durations)
+                if is_running and current_round_start:
+                    elapsed_in_current = max(0.0, time.time() - current_round_start)
+                    time_left_current = max(0.0, avg_sec_per_round - elapsed_in_current)
+                    eta_seconds = int((max(0, remaining_rounds - 1) * avg_sec_per_round) + time_left_current)
+                else:
+                    eta_seconds = int(remaining_rounds * avg_sec_per_round)
+
+                speed_formatted = f"{avg_sec_per_round:.1f} dtk/ronde (Terukur)"
+                if remaining_rounds <= 0:
+                    eta_formatted = "Pelatihan Selesai"
+                else:
+                    eta_formatted = f"{format_duration(eta_seconds)} ({remaining_rounds} ronde tersisa)"
+            elif is_running and current_round > 0:
+                # Ronde 1 sedang berjalan, sedang mengukur waktu nyatanya
+                elapsed_in_r1 = int(time.time() - current_round_start) if current_round_start else elapsed_sec
+                avg_sec_per_round = 0.0
+                eta_seconds = 0
+                speed_formatted = "Mengukur Ronde 1..."
+                eta_formatted = f"Mengukur durasi Ronde 1... ({elapsed_in_r1}s berjalan)"
+            else:
+                avg_sec_per_round = 0.0
+                eta_seconds = 0
+                speed_formatted = "--"
+                eta_formatted = "Siap dimulai"
+
             elapsed_formatted = format_duration(elapsed_sec) if is_running else "--"
-            speed_formatted = f"~{int(avg_sec_per_round)} dtk/ronde" if is_running else "--"
 
             status_payload = {
                 "status": "running" if is_running else "idle",

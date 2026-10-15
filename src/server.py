@@ -21,11 +21,55 @@ from src.strategies.fedbn import FedBNStrategy
 from src.strategies.fedbb import FedBBStrategy
 from src.strategies.fedsol import FedSOLStrategy
 
+def record_round_start(server_round: int):
+    """Mencatat timestamp saat ronde federasi dimulai"""
+    import time, json
+    timing_file = os.path.join(os.getcwd(), "logs", "round_timing.json")
+    try:
+        os.makedirs(os.path.dirname(timing_file), exist_ok=True)
+        data = {}
+        if os.path.exists(timing_file):
+            with open(timing_file, "r") as f:
+                data = json.load(f)
+        now = time.time()
+        prev_rnd = str(server_round - 1)
+        if prev_rnd in data and "start" in data[prev_rnd] and "duration" not in data[prev_rnd]:
+            data[prev_rnd]["end"] = now
+            data[prev_rnd]["duration"] = round(now - data[prev_rnd]["start"], 2)
+
+        data[str(server_round)] = {"start": now}
+        with open(timing_file, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
+
+
+def record_round_end(server_round: int):
+    """Mencatat timestamp dan menghitung durasi nyata saat ronde federasi selesai diagregasi"""
+    import time, json
+    timing_file = os.path.join(os.getcwd(), "logs", "round_timing.json")
+    try:
+        if os.path.exists(timing_file):
+            with open(timing_file, "r") as f:
+                data = json.load(f)
+            rnd_key = str(server_round)
+            now = time.time()
+            if rnd_key in data and "start" in data[rnd_key]:
+                dur = round(now - data[rnd_key]["start"], 2)
+                data[rnd_key]["end"] = now
+                data[rnd_key]["duration"] = dur
+                with open(timing_file, "w") as f:
+                    json.dump(data, f, indent=2)
+                print(f"⏱️ [SERVER] Ronde {server_round} selesai dalam {dur} detik ({dur/60:.2f} menit).")
+    except Exception:
+        pass
+
+
 def get_strategy(strategy_name: str, num_rounds: int, min_fit_clients: int, min_available_clients: int, initial_params):
     strategy_name = strategy_name.lower()
 
     def fit_config(server_round: int):
-        """Kirim instruksi strategi dan hyperparameter ke semua klien dari server pusat"""
+        record_round_start(server_round)
         return {
             "current_round": server_round,
             "strategy": strategy_name,
@@ -42,21 +86,28 @@ def get_strategy(strategy_name: str, num_rounds: int, min_fit_clients: int, min_
         "min_available_clients": min_available_clients,
         "initial_parameters": initial_params,
         "on_fit_config_fn": fit_config,
-        "on_evaluate_config_fn": fit_config,
     }
 
     if strategy_name == "fedbn":
         print("🧠 Initializing FedBN Strategy (Excluding BatchNorm1d from Aggregation)")
-        return FedBNStrategy(**common_args)
+        strategy = FedBNStrategy(**common_args)
     elif strategy_name == "fedbb":
         print("⚖️ Initializing FedBB Strategy (CBR Aggregation & Balanced Loss)")
-        return FedBBStrategy(alpha=0.5, **common_args)
+        strategy = FedBBStrategy(alpha=0.5, **common_args)
     elif strategy_name == "fedsol":
         print("📐 Initializing FedSOL Strategy (Orthogonal Optimization Aggregation)")
-        return FedSOLStrategy(**common_args)
+        strategy = FedSOLStrategy(**common_args)
     else:
         print(f"⚠️ Strategy '{strategy_name}' unrecognized, defaulting to FedAvg")
-        return fl.server.strategy.FedAvg(**common_args)
+        strategy = fl.server.strategy.FedAvg(**common_args)
+
+    orig_aggregate_fit = strategy.aggregate_fit
+    def timed_aggregate_fit(server_round, results, failures):
+        res = orig_aggregate_fit(server_round, results, failures)
+        record_round_end(server_round)
+        return res
+    strategy.aggregate_fit = timed_aggregate_fit
+    return strategy
 
 def run_single_strategy(strategy_name: str, num_rounds: int, server_address: str, min_clients: int):
     print(f"\n==================================================================")

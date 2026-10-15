@@ -383,14 +383,15 @@ function updateClientStatuses(clients, connectedCount, totalClients) {
   }
 
   const clientMap = {
-    'vm2': { badge: 'badgeVm2', card: 'clientNodeVm2' },
-    'vm3': { badge: 'badgeVm3', card: 'clientNodeVm3' },
-    'vm4': { badge: 'badgeVm4', card: 'clientNodeVm4' }
+    'vm2': { badge: 'badgeVm2', card: 'clientNodeVm2', timing: 'timingVm2' },
+    'vm3': { badge: 'badgeVm3', card: 'clientNodeVm3', timing: 'timingVm3' },
+    'vm4': { badge: 'badgeVm4', card: 'clientNodeVm4', timing: 'timingVm4' }
   };
 
   for (const [key, els] of Object.entries(clientMap)) {
     const badge = document.getElementById(els.badge);
     const card = document.getElementById(els.card);
+    const timing = document.getElementById(els.timing);
     const client = clients ? clients[key] : null;
 
     if (!client || client.status === 'offline') {
@@ -402,6 +403,10 @@ function updateClientStatuses(clients, connectedCount, totalClients) {
         card.classList.add('is-offline');
         card.classList.remove('is-training');
       }
+      if (timing) {
+        timing.textContent = 'Offline';
+        timing.style.color = '#94a3b8';
+      }
     } else if (client.status === 'training') {
       if (badge) {
         badge.className = 'badge-status training';
@@ -411,6 +416,10 @@ function updateClientStatuses(clients, connectedCount, totalClients) {
         card.classList.remove('is-offline');
         card.classList.add('is-training');
       }
+      if (timing) {
+        const elapsed = Math.round(client.elapsed_in_round || 0);
+        timing.innerHTML = `<span style="color:#2563eb;font-weight:600;">Sedang berjalan: ${elapsed}s...</span>`;
+      }
     } else {
       if (badge) {
         badge.className = 'badge-status online';
@@ -419,6 +428,16 @@ function updateClientStatuses(clients, connectedCount, totalClients) {
       if (card) {
         card.classList.remove('is-offline');
         card.classList.remove('is-training');
+      }
+      if (timing) {
+        if (client.measured_duration && client.measured_duration > 0) {
+          const s = Math.round(client.measured_duration);
+          const m = (client.measured_duration / 60).toFixed(1);
+          timing.innerHTML = `Terukur: <span style="color:#059669;font-weight:700;">${s}s</span> (${m} mnt/ronde)`;
+        } else {
+          timing.textContent = 'Standby (Menunggu ronde)';
+          timing.style.color = '#64748b';
+        }
       }
     }
   }
