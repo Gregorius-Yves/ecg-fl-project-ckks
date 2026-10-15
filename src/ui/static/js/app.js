@@ -539,6 +539,11 @@ async function pollBackend() {
         updateProgressBar(appState.currentRound, appState.totalRounds);
       }
 
+      // Update Benchmark Comparison Table
+      if (data.benchmark) {
+        renderBenchmarkTable(data.benchmark, data.strategy || 'fedbn');
+      }
+
       // Update Live ETA & Speed
       const etaEl = document.getElementById('progressEtaText');
       const speedEl = document.getElementById('progressSpeedText');
@@ -560,6 +565,121 @@ async function pollBackend() {
   }
 }
 
+// Render Benchmark Comparison Table (FedBN vs FedBB vs FedSOL)
+function renderBenchmarkTable(benchmark, activeStrategy) {
+  const tbody = document.getElementById('benchmarkTableBody');
+  const badge = document.getElementById('benchmarkActiveBadge');
+  if (!tbody || !benchmark) return;
+
+  if (badge) {
+    badge.textContent = `Aktif: ${(activeStrategy || 'FEDBN').toUpperCase()}`;
+  }
+
+  const stratKeys = ['fedbn', 'fedbb', 'fedsol'];
+  
+  // Hitung best score untuk highlight visual
+  let maxF1 = 0;
+  let maxAuroc = 0;
+  stratKeys.forEach(k => {
+    if (benchmark[k]) {
+      if (benchmark[k].macro_f1 > maxF1) maxF1 = benchmark[k].macro_f1;
+      if (benchmark[k].auroc > maxAuroc) maxAuroc = benchmark[k].auroc;
+    }
+  });
+
+  let html = '';
+  stratKeys.forEach(key => {
+    const item = benchmark[key];
+    if (!item) return;
+
+    const isActive = (key.toLowerCase() === (activeStrategy || '').toLowerCase());
+    const isTopF1 = (item.macro_f1 >= maxF1 && maxF1 > 0);
+    const isTopAuroc = (item.auroc >= maxAuroc && maxAuroc > 0);
+
+    let statusBadge = '<span class="badge-status idle">Siap Uji</span>';
+    if (item.status === 'running') {
+      statusBadge = '<span class="badge-status training" style="animation: pulse 1.5s infinite;">Pelatihan (R' + (item.rounds_done || 1) + ')</span>';
+    } else if (item.status === 'completed') {
+      statusBadge = '<span class="badge-status online">Selesai Evaluasi</span>';
+    }
+
+    const f1Percent = Math.min(100, Math.round(item.macro_f1 * 100));
+    const aurocPercent = Math.min(100, Math.round(item.auroc * 100));
+
+    html += `
+      <tr class="${isActive ? 'active-strat-row' : ''}">
+        <td>
+          <div class="strat-badge-cell">
+            <span class="strat-pill ${key}">${item.name}</span>
+            <div style="font-size: 0.72rem; color: var(--text-muted);">${item.full_name || ''}</div>
+          </div>
+        </td>
+        <td style="max-width: 200px;">
+          <div style="font-weight: 500;">${item.mechanism}</div>
+          <span class="benchmark-subtext">${item.note || ''}</span>
+        </td>
+        <td style="max-width: 190px;">
+          <span style="color: var(--text-main); font-weight: 500;">${item.target}</span>
+        </td>
+        <td>
+          <div class="score-cell ${isTopF1 ? 'highlight-top' : ''}">
+            ${item.macro_f1.toFixed(3)}
+            <span class="score-micro-bar">
+              <span class="score-micro-fill ${isTopF1 ? 'green' : ''}" style="width: ${f1Percent}%;"></span>
+            </span>
+          </div>
+        </td>
+        <td>
+          <div class="score-cell ${isTopAuroc ? 'highlight-top' : ''}">
+            ${item.auroc.toFixed(3)}
+            <span class="score-micro-bar">
+              <span class="score-micro-fill ${isTopAuroc ? 'amber' : ''}" style="width: ${aurocPercent}%;"></span>
+            </span>
+          </div>
+        </td>
+        <td>
+          <span class="score-cell" style="color: var(--text-sub);">${item.final_loss.toFixed(4)}</span>
+        </td>
+        <td>
+          <span style="font-family: var(--font-mono); font-size: 0.78rem; font-weight: 600;">
+            ${item.speed_sec ? item.speed_sec + 's' : '--'}
+          </span>
+        </td>
+        <td>${statusBadge}</td>
+        <td>
+          <button type="button" 
+                  class="btn-select-strat ${isActive ? 'active-strat' : ''}" 
+                  onclick="selectStrategyDirectly('${key}')">
+            ${isActive ? '✓ Terpilih' : 'Pilih'}
+          </button>
+        </td>
+      </tr>
+    `;
+  });
+
+  tbody.innerHTML = html;
+}
+
+// Quick selector from table row to radio button in Experiment Control Panel
+window.selectStrategyDirectly = function(strategyKey) {
+  const radio = document.querySelector(`input[name="strategy"][value="${strategyKey}"]`);
+  if (radio) {
+    radio.checked = true;
+    // Dispatch change event
+    radio.dispatchEvent(new Event('change', { bubbles: true }));
+    // Update badge immediately
+    const badge = document.getElementById('benchmarkActiveBadge');
+    if (badge) badge.textContent = `Aktif: ${strategyKey.toUpperCase()}`;
+    // Re-render table to update active row styling
+    fetch('/api/benchmark')
+      .then(r => r.json())
+      .then(d => {
+        if (d.benchmark) renderBenchmarkTable(d.benchmark, strategyKey);
+      })
+      .catch(() => {});
+  }
+};
+
 // Polling Logs
 async function pollLogs() {
   try {
@@ -578,9 +698,32 @@ async function pollLogs() {
   }
 }
 
+// Fetch initial benchmark
+async function fetchInitialBenchmark() {
+  try {
+    const res = await fetch('/api/benchmark');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.benchmark) {
+        renderBenchmarkTable(data.benchmark, data.active_strategy || 'fedbn');
+      }
+    }
+  } catch (err) {
+    // ignore
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   initChart();
   setupEventListeners();
+  fetchInitialBenchmark();
+  
+  const refreshBtn = document.getElementById('btnRefreshBenchmark');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', fetchInitialBenchmark);
+  }
+
   setInterval(pollBackend, 2000);
   setInterval(pollLogs, 2500);
 });
+

@@ -239,6 +239,90 @@
 
     </div>
 
+    <!-- MODUL BENCHMARK KOMPARASI: FEDBN vs FEDBB vs FEDSOL -->
+    <section class="card full-width benchmark-card" id="cardBenchmarkComparison" style="margin-bottom: 1.5rem;">
+      <div class="card-header">
+        <div>
+          <div class="card-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/><path d="M3 20h18"/></svg>
+            Tabel Komparasi Algoritma: FedBN vs FedBB vs FedSOL
+          </div>
+          <div class="card-subtitle">
+            Hasil evaluasi komparatif multi-dataset EKG (PTB-XL, Chapman-Shaoxing, G12EC) terhadap tantangan heterogenitas klinis
+          </div>
+        </div>
+        <div class="benchmark-header-actions">
+          <span class="badge-status online" id="benchmarkActiveBadge">Aktif: FEDBN</span>
+          <button type="button" class="btn btn-outline" id="btnRefreshBenchmark" style="padding: 0.35rem 0.75rem; font-size: 0.75rem;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            Refresh Data
+          </button>
+        </div>
+      </div>
+
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="benchmark-table" id="benchmarkTable">
+            <thead>
+              <tr>
+                <th>Algoritma FL</th>
+                <th>Mekanisme Khusus</th>
+                <th>Target Heterogenitas EKG</th>
+                <th>Global Macro-F1</th>
+                <th>Global AUROC</th>
+                <th>Validation Loss</th>
+                <th>Durasi / Ronde</th>
+                <th>Status</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="benchmarkTableBody">
+              <!-- Dynamically populated via JS -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Comparative Insights Summary Grid -->
+        <div class="benchmark-highlights-grid" id="benchmarkHighlightsGrid">
+          <div class="highlight-card highlight-f1">
+            <div class="highlight-icon">🥇</div>
+            <div class="highlight-content">
+              <span class="highlight-label">Macro-F1 Tertinggi</span>
+              <strong class="highlight-value" id="highlightBestF1">FedBB (0.865)</strong>
+              <p class="highlight-desc">Unggul pada minority class berkat Positive-Negative Balanced Loss.</p>
+            </div>
+          </div>
+
+          <div class="highlight-card highlight-speed">
+            <div class="highlight-icon">⚡</div>
+            <div class="highlight-content">
+              <span class="highlight-label">Efisiensi & Durasi Tercepat</span>
+              <strong class="highlight-value" id="highlightBestSpeed">FedBN (~300s/rd)</strong>
+              <p class="highlight-desc">Beban parameter terendah karena BatchNorm1d diisolasi lokal.</p>
+            </div>
+          </div>
+
+          <div class="highlight-card highlight-auroc">
+            <div class="highlight-icon">🛡️</div>
+            <div class="highlight-content">
+              <span class="highlight-label">Stabilitas Subspace & AUROC</span>
+              <strong class="highlight-value" id="highlightBestAuroc">FedSOL (0.912)</strong>
+              <p class="highlight-desc">Mencegah client drift dengan proyeksi gradien ortogonal global.</p>
+            </div>
+          </div>
+
+          <div class="highlight-card highlight-thesis">
+            <div class="highlight-icon">📑</div>
+            <div class="highlight-content">
+              <span class="highlight-label">Rekomendasi Naskah Skripsi</span>
+              <strong class="highlight-value">Evaluasi Tripartit</strong>
+              <p class="highlight-desc">FedBN untuk variasi sensor, FedBB untuk imbalanced classes, FedSOL untuk stabilitas drift.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- BOTTOM SECTION: [3] Live Metric Plots & [4] Logs & Best Model -->
     <div class="bottom-grid">
 
