@@ -7,7 +7,7 @@
 
 - name: Hentikan Flower Client di Seluruh Node Klien
   hosts: clients
-  become: false
+  become: true
   tasks:
     - name: 1. Hentikan proses python3 src/client.py
       ansible.builtin.shell: |
@@ -21,7 +21,19 @@
         executable: /bin/bash
       failed_when: false
 
-    - name: 2. Konfirmasi proses telah berhenti
+    - name: 2. Hentikan container Docker jika ada
+      community.docker.docker_container:
+        name: "{{ container_name }}"
+        state: absent
+        force_kill: true
+      ignore_errors: true
+
+    - name: 3. Hapus file log klien lama secara bersih
+      ansible.builtin.file:
+        path: "/home/{{ ansible_user }}/ecg-fl-project/logs/client.log"
+        state: absent
+
+    - name: 4. Konfirmasi proses telah berhenti
       ansible.builtin.shell: |
         pgrep -f "[c]lient.py" || echo "STOPPED"
       args:
@@ -29,6 +41,6 @@
       register: stop_status
       changed_when: false
 
-    - name: 3. Status
+    - name: 5. Status
       ansible.builtin.debug:
-        msg: "🛑 [{{ inventory_hostname }}] Client {{ dataset_label }} telah dihentikan (Status: {{ stop_status.stdout | trim }})."
+        msg: "🛑 [{{ inventory_hostname }}] Client {{ dataset_label }} telah dihentikan & log dibersihkan (Status: {{ stop_status.stdout | trim }})."
