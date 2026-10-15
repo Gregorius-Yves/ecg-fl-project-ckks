@@ -34,11 +34,12 @@
         executable: /bin/bash
       failed_when: false
 
-    - name: 3. Pastikan direktori logs/ tersedia
-      ansible.builtin.file:
-        path: "{{ user_project_dir }}/logs"
-        state: directory
-        mode: "0775"
+    - name: 3. Bersihkan log lama agar mulai dari awal
+      ansible.builtin.shell: |
+        mkdir -p "{{ user_project_dir }}/logs"
+        > "{{ user_project_dir }}/logs/client.log"
+      args:
+        executable: /bin/bash
 
     - name: 4. Jalankan Flower Client di background (nohup)
       ansible.builtin.shell: |
@@ -53,15 +54,23 @@
         chdir: "{{ user_project_dir }}"
         executable: /bin/bash
 
-    - name: 5. Tunggu proses client aktif dan periksa PID
+    - name: 5. Tunggu inisialisasi dan baca status awal
       ansible.builtin.shell: |
-        sleep 2
+        sleep 3
         pgrep -f "[c]lient.py" | head -n 1
       args:
         executable: /bin/bash
       register: client_pid
       changed_when: false
 
+    - name: 5b. Ambil log awal eksekusi klien
+      ansible.builtin.shell: "tail -n 10 {{ user_project_dir }}/logs/client.log"
+      register: startup_log
+      changed_when: false
+
     - name: 6. Tampilkan Konfirmasi Status Klien
       ansible.builtin.debug:
-        msg: "🟢 [{{ inventory_hostname }}] Client '{{ dataset_label }}' (ID: {{ client_id }}) BERHASIL AKTIF (PID: {{ client_pid.stdout | trim }})! Standby terhubung ke Server {{ server_addr }}."
+        msg:
+          - "🟢 [{{ inventory_hostname }}] Client '{{ dataset_label }}' (ID: {{ client_id }}) AKTIF (PID: {{ client_pid.stdout | trim }})"
+          - "📄 Log Awal:"
+          - "{{ startup_log.stdout_lines }}"
