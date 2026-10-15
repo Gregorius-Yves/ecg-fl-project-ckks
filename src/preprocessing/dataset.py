@@ -39,9 +39,34 @@ class ECGDataset(Dataset):
         self.classes = DIAGNOSTIC_CLASSES_27
         self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
 
-        self.record_files = self._discover_records()
-        if max_samples and max_samples < len(self.record_files):
-            self.record_files = self.record_files[:max_samples]
+        # Cek apakah ada file tensor bersih yang sudah dipra-proses offline
+        preprocessed_candidates = [
+            os.path.join(os.getcwd(), "data", f"{self.dataset_name}_preprocessed.pt"),
+            os.path.join(self.data_dir, f"{self.dataset_name}_preprocessed.pt"),
+            os.path.join(self.data_dir, "preprocessed.pt"),
+            os.path.join(str(Path(self.data_dir).parent), f"{self.dataset_name}_preprocessed.pt")
+        ]
+        self.preprocessed_file = None
+        for p in preprocessed_candidates:
+            if os.path.exists(p):
+                self.preprocessed_file = p
+                break
+
+        if self.preprocessed_file:
+            print(f"⚡ [OFFLINE PREPROCESSED] Memuat dataset bersih langsung dari file: {self.preprocessed_file}", flush=True)
+            data = torch.load(self.preprocessed_file, weights_only=False)
+            self.signals = data["signals"]
+            self.labels = data["labels"]
+            if max_samples and max_samples < len(self.signals):
+                self.signals = self.signals[:max_samples]
+                self.labels = self.labels[:max_samples]
+            self.use_preprocessed = True
+            print(f"✅ Berhasil memuat {len(self.signals)} rekaman pra-proses (Bypass I/O dan filtering runtime).", flush=True)
+        else:
+            self.use_preprocessed = False
+            self.record_files = self._discover_records()
+            if max_samples and max_samples < len(self.record_files):
+                self.record_files = self.record_files[:max_samples]
 
     def _discover_records(self):
         """Mencari semua rekaman .hea di folder dataset (mengabaikan file macOS metadata ._*)"""
@@ -59,9 +84,14 @@ class ECGDataset(Dataset):
         return sorted(valid_records)
 
     def __len__(self):
+        if self.use_preprocessed:
+            return len(self.signals)
         return len(self.record_files)
 
     def __getitem__(self, idx):
+        if self.use_preprocessed:
+            return self.signals[idx], self.labels[idx]
+
         if self.cache_in_ram and idx in self.cache:
             return self.cache[idx]
 
