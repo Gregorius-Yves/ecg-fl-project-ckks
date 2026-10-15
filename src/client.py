@@ -29,6 +29,8 @@ import urllib.request
 import json
 import time
 
+import collections
+
 class HeartbeatThread(threading.Thread):
     def __init__(self, client, server_address: str, interval: float = 2.0):
         super().__init__(daemon=True)
@@ -44,6 +46,18 @@ class HeartbeatThread(threading.Thread):
         consecutive_errors = 0
         while self.running:
             try:
+                # Ambil 30 baris log terakhir dari logs/client.log atau ring buffer log_history
+                recent_logs = []
+                log_file = os.path.join(os.getcwd(), "logs", "client.log")
+                if os.path.exists(log_file):
+                    try:
+                        with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
+                            recent_logs = f.readlines()[-35:]
+                    except Exception:
+                        pass
+                if not recent_logs and hasattr(self.client, "log_history") and self.client.log_history:
+                    recent_logs = [line + "\n" if not line.endswith("\n") else line for line in self.client.log_history]
+
                 payload = {
                     "client_id": self.client.client_id,
                     "dataset": self.client.dataset_name,
@@ -52,6 +66,7 @@ class HeartbeatThread(threading.Thread):
                     "current_round": getattr(self.client, "current_round", 0),
                     "epoch": getattr(self.client, "current_epoch", 0),
                     "batch": getattr(self.client, "current_batch", 0),
+                    "logs": "".join(recent_logs)
                 }
                 data = json.dumps(payload).encode("utf-8")
                 req = urllib.request.Request(
@@ -87,6 +102,8 @@ class ECGFlowerClient(fl.client.NumPyClient):
         self.current_round = 0
         self.current_epoch = 0
         self.current_batch = 0
+        self.log_history = collections.deque(maxlen=40)
+        self.log_history.append(f"🏥 Klien {self.dataset_name.upper()} (ID: {self.client_id}) aktif & siap.")
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = ResNet1D(in_channels=12, num_classes=27).to(self.device)
@@ -202,7 +219,9 @@ class ECGFlowerClient(fl.client.NumPyClient):
                     self.current_epoch = epoch + 1
                     self.current_batch = batch_idx + 1
                     self.current_detail = f"Ronde {server_round} (Ep {epoch+1}/{epochs} - {pct:.0f}%)"
-                    print(f"   [Epoch {epoch+1}/{epochs}] Batch {batch_idx+1}/{total_batches} ({pct:.1f}%) | Batch Loss: {loss.item():.4f} (Avg: {avg_b_loss:.4f})", flush=True)
+                    msg = f"   [Epoch {epoch+1}/{epochs}] Batch {batch_idx+1}/{total_batches} ({pct:.1f}%) | Batch Loss: {loss.item():.4f} (Avg: {avg_b_loss:.4f})"
+                    self.log_history.append(msg)
+                    print(msg, flush=True)
 
         num_examples = len(self.train_loader.dataset)
         avg_loss = total_loss / (epochs * len(self.train_loader))

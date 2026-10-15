@@ -43,6 +43,7 @@ KNOWN_CLIENTS = {
 
 class ClientTracker:
     heartbeats = {}  # key -> dict(last_seen=float, status=str, detail=str, ...)
+    client_logs = {"vm2": "", "vm3": "", "vm4": ""}
 
     @classmethod
     def register_heartbeat(cls, data, client_ip=None):
@@ -54,6 +55,8 @@ class ClientTracker:
                 key = k
                 break
         if key:
+            if "logs" in data and data["logs"]:
+                cls.client_logs[key] = str(data["logs"])
             was_registered = key in cls.heartbeats and (time.time() - cls.heartbeats[key]["last_seen"] < 8.0)
             if not was_registered:
                 print(f"💓 [HEARTBEAT] Klien {KNOWN_CLIENTS[key]['name']} (ID: {cid}) TERHUBUNG dari {client_ip}!", flush=True)
@@ -353,20 +356,49 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps(status_payload).encode("utf-8"))
             return
 
-        elif self.path == "/api/logs":
-            logs = "Menunggu sesi training dimulai..."
+        elif self.path.startswith("/api/logs"):
+            import urllib.parse
+            parsed_url = urllib.parse.urlparse(self.path)
+            query_params = urllib.parse.parse_qs(parsed_url.query)
+            source = query_params.get("source", ["server"])[0].lower()
+
+            server_log = "Menunggu sesi training dimulai..."
             if os.path.exists(SERVER_LOG_FILE):
                 try:
                     with open(SERVER_LOG_FILE, "r", encoding="utf-8") as f:
                         lines = f.readlines()
-                        logs = "".join(lines[-80:])  # Ambil 80 baris terakhir
+                        server_log = "".join(lines[-80:])
                 except Exception as e:
-                    logs = f"Error membaca log: {e}"
+                    server_log = f"Error membaca log server: {e}"
+
+            if source == "server":
+                logs = server_log
+            elif source in ClientTracker.client_logs:
+                client_log = ClientTracker.client_logs.get(source, "")
+                if client_log:
+                    logs = client_log
+                else:
+                    client_name = KNOWN_CLIENTS.get(source, {}).get("name", source.upper())
+                    logs = f"Menunggu log dari {client_name}...\n(Klien belum aktif atau belum mengirim data)"
+            elif source == "all":
+                combined = []
+                combined.append("=== [SERVER ORCHESTRATOR LOGS] ===")
+                combined.append(server_log.strip())
+                for ckey, cinfo in KNOWN_CLIENTS.items():
+                    clog = ClientTracker.client_logs.get(ckey, "")
+                    combined.append(f"\n=== [{cinfo['name']} LOGS] ===")
+                    if clog:
+                        combined.append(clog.strip())
+                    else:
+                        combined.append("Belum ada log diterima dari klien ini.")
+                logs = "\n".join(combined)
+            else:
+                logs = server_log
 
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({"logs": logs}).encode("utf-8"))
+            self.wfile.write(json.dumps({"logs": logs, "source": source}).encode("utf-8"))
             return
 
         elif self.path == "/api/download-model":

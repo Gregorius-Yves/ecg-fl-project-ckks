@@ -7,6 +7,7 @@
 const appState = {
   isRunning: false,
   activeMetric: 'loss',
+  activeLogSource: 'server',
   currentRound: 0,
   totalRounds: 50,
   metricsHistory: {
@@ -231,6 +232,19 @@ function setupEventListeners() {
   btnDownload.addEventListener('click', () => {
     window.location.href = '/api/download-model';
   });
+
+  // Log Source Tabs (Server vs VM2 vs VM3 vs VM4 vs Semua)
+  const logTabs = document.querySelectorAll('.log-tab-btn');
+  logTabs.forEach(btn => {
+    btn.addEventListener('click', () => {
+      logTabs.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      appState.activeLogSource = btn.dataset.source;
+      const box = document.getElementById('logStreamBox');
+      if (box) box.textContent = `Memuat log dari [${btn.textContent}]...`;
+      pollLogs();
+    });
+  });
 }
 
 function setServerRunningState(isRunning) {
@@ -374,7 +388,8 @@ async function pollBackend() {
 // Polling Logs
 async function pollLogs() {
   try {
-    const res = await fetch('/api/logs');
+    const source = appState.activeLogSource || 'server';
+    const res = await fetch(`/api/logs?source=${source}`);
     if (res.ok) {
       const data = await res.json();
       if (data.logs) {
