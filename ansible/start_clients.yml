@@ -34,10 +34,10 @@
         executable: /bin/bash
       failed_when: false
 
-    - name: 3. Bersihkan log lama agar mulai dari awal
+    - name: 3. Hapus log lama secara bersih
       ansible.builtin.shell: |
         mkdir -p "{{ user_project_dir }}/logs"
-        > "{{ user_project_dir }}/logs/client.log"
+        rm -f "{{ user_project_dir }}/logs/client.log"
       args:
         executable: /bin/bash
 

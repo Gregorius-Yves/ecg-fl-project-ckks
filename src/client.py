@@ -189,12 +189,7 @@ class ECGFlowerClient(fl.client.NumPyClient):
         if server_round == 1:
             self.log_history.clear()
             self.last_round_duration = 0.0
-            log_file = os.path.join(os.getcwd(), "logs", "client.log")
-            try:
-                with open(log_file, "w", encoding="utf-8") as f:
-                    f.write(f"=== [MEMULAI SESI BARU: RONDE 1] Strategi: {server_strategy.upper()} ===\n")
-            except Exception:
-                pass
+            print(f"\n=== [MEMULAI SESI BARU: RONDE 1] Strategi: {server_strategy.upper()} ===", flush=True)
 
         t_round_start = time.time()
         self.current_round_start_time = t_round_start
@@ -298,18 +293,10 @@ def main():
     parser.add_argument("--epochs", type=int, default=int(os.environ.get("LOCAL_EPOCHS", 3)))
     args = parser.parse_args()
 
-    print(f"\n🏥 Starting ECG Client: {args.dataset.upper()} (ID: {args.client_id})")
-    print(f"🔗 Target Server: {args.server} | Strategy: {args.strategy.upper()}")
-
-    # Bersihkan file log lama saat klien dimulai fresh
-    log_dir = os.path.join(os.getcwd(), "logs")
-    os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, "client.log")
-    try:
-        with open(log_file, "w", encoding="utf-8") as f:
-            f.write(f"=== [START KLIEN {args.dataset.upper()} ID: {args.client_id}] Target: {args.server} ===\n")
-    except Exception:
-        pass
+    print(f"\n=======================================================", flush=True)
+    print(f"🏥 Starting ECG Client: {args.dataset.upper()} (ID: {args.client_id})", flush=True)
+    print(f"🔗 Target Server: {args.server} | Strategy: {args.strategy.upper()}", flush=True)
+    print(f"=======================================================\n", flush=True)
 
     client = ECGFlowerClient(
         client_id=args.client_id,
