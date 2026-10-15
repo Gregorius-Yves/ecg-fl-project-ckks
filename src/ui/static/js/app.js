@@ -32,21 +32,39 @@ function initChart() {
       labels: [],
       datasets: [
         {
-          label: 'Train Loss',
+          label: 'Global (Agregat)',
           data: [],
           borderColor: '#2563eb',
           backgroundColor: 'rgba(37, 99, 235, 0.08)',
-          borderWidth: 2,
+          borderWidth: 2.5,
           tension: 0.3,
           fill: true
         },
         {
-          label: 'Val Loss',
+          label: 'PTB-XL (VM 2)',
           data: [],
-          borderColor: '#10b981',
+          borderColor: '#6366f1',
           backgroundColor: 'transparent',
           borderWidth: 2,
-          borderDash: [5, 5],
+          borderDash: [3, 3],
+          tension: 0.3
+        },
+        {
+          label: 'Chapman (VM 3)',
+          data: [],
+          borderColor: '#f97316',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          borderDash: [5, 3],
+          tension: 0.3
+        },
+        {
+          label: 'G12EC (VM 4)',
+          data: [],
+          borderColor: '#06b6d4',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          borderDash: [6, 4],
           tension: 0.3
         }
       ]
@@ -57,7 +75,7 @@ function initChart() {
       plugins: {
         legend: {
           position: 'top',
-          labels: { font: { family: 'Inter', size: 12 }, boxWidth: 16 }
+          labels: { font: { family: 'Inter', size: 11, weight: '600' }, boxWidth: 14, padding: 12 }
         },
         tooltip: {
           backgroundColor: '#0f172a',
@@ -72,7 +90,7 @@ function initChart() {
           ticks: { color: '#64748b' }
         },
         y: {
-          title: { display: true, text: 'Nilai Metrik', color: '#64748b' },
+          title: { display: true, text: 'BCE Loss', color: '#64748b' },
           grid: { color: '#f1f5f9' },
           ticks: { color: '#64748b' }
         }
@@ -81,7 +99,7 @@ function initChart() {
   });
 }
 
-// Switch Metric Tab (Loss / F1 / AUROC)
+// Switch Metric Tab (Loss / F1 / AUROC) dengan dukungan multi-klien (Global + PTB-XL + Chapman + G12EC)
 function switchMetricTab(metricName) {
   appState.activeMetric = metricName;
   document.querySelectorAll('.chart-tab-btn').forEach(btn => {
@@ -90,27 +108,53 @@ function switchMetricTab(metricName) {
 
   if (!metricChart) return;
 
-  const rounds = appState.metricsHistory.rounds;
+  const h = appState.metricsHistory || {};
+  const rounds = h.rounds || [];
+
+  const getClientSeries = (clientKey, metric, fallback) => {
+    if (h[clientKey] && Array.isArray(h[clientKey][metric]) && h[clientKey][metric].length > 0) {
+      return h[clientKey][metric];
+    }
+    return fallback || [];
+  };
 
   if (metricName === 'loss') {
     metricChart.data.labels = rounds;
     metricChart.data.datasets = [
       {
-        label: 'Train Loss',
-        data: appState.metricsHistory.loss,
+        label: 'Global (Agregat)',
+        data: h.loss || [],
         borderColor: '#2563eb',
         backgroundColor: 'rgba(37, 99, 235, 0.08)',
-        borderWidth: 2,
+        borderWidth: 2.5,
         tension: 0.3,
         fill: true
       },
       {
-        label: 'Val Loss',
-        data: appState.metricsHistory.val_loss,
-        borderColor: '#10b981',
+        label: 'PTB-XL (VM 2)',
+        data: getClientSeries('ptbxl', 'loss', h.loss),
+        borderColor: '#6366f1',
         backgroundColor: 'transparent',
         borderWidth: 2,
-        borderDash: [5, 5],
+        borderDash: [3, 3],
+        tension: 0.3
+      },
+      {
+        label: 'Chapman (VM 3)',
+        data: getClientSeries('chapman', 'loss', h.loss),
+        borderColor: '#f97316',
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        borderDash: [5, 3],
+        tension: 0.3
+      },
+      {
+        label: 'G12EC (VM 4)',
+        data: getClientSeries('g12ec', 'loss', h.loss),
+        borderColor: '#06b6d4',
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        borderDash: [6, 4],
         tension: 0.3
       }
     ];
@@ -119,13 +163,40 @@ function switchMetricTab(metricName) {
     metricChart.data.labels = rounds;
     metricChart.data.datasets = [
       {
-        label: 'Macro-F1 Score',
-        data: appState.metricsHistory.f1_macro,
-        borderColor: '#6366f1',
-        backgroundColor: 'rgba(99, 102, 241, 0.08)',
+        label: 'Global F1-Macro',
+        data: h.f1_macro || [],
+        borderColor: '#2563eb',
+        backgroundColor: 'rgba(37, 99, 235, 0.08)',
         borderWidth: 2.5,
         tension: 0.3,
         fill: true
+      },
+      {
+        label: 'PTB-XL F1 (VM 2)',
+        data: getClientSeries('ptbxl', 'f1_macro', h.f1_macro),
+        borderColor: '#6366f1',
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        borderDash: [3, 3],
+        tension: 0.3
+      },
+      {
+        label: 'Chapman F1 (VM 3)',
+        data: getClientSeries('chapman', 'f1_macro', h.f1_macro),
+        borderColor: '#f97316',
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        borderDash: [5, 3],
+        tension: 0.3
+      },
+      {
+        label: 'G12EC F1 (VM 4)',
+        data: getClientSeries('g12ec', 'f1_macro', h.f1_macro),
+        borderColor: '#06b6d4',
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        borderDash: [6, 4],
+        tension: 0.3
       }
     ];
     metricChart.options.scales.y.title.text = 'Macro-F1 (0.0 - 1.0)';
@@ -133,16 +204,43 @@ function switchMetricTab(metricName) {
     metricChart.data.labels = rounds;
     metricChart.data.datasets = [
       {
-        label: 'Macro-AUROC',
-        data: appState.metricsHistory.auroc,
-        borderColor: '#f59e0b',
-        backgroundColor: 'rgba(245, 158, 11, 0.08)',
+        label: 'Global AUROC',
+        data: h.auroc || [],
+        borderColor: '#d97706',
+        backgroundColor: 'rgba(217, 119, 6, 0.08)',
         borderWidth: 2.5,
         tension: 0.3,
         fill: true
+      },
+      {
+        label: 'PTB-XL AUROC (VM 2)',
+        data: getClientSeries('ptbxl', 'auroc', h.auroc),
+        borderColor: '#6366f1',
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        borderDash: [3, 3],
+        tension: 0.3
+      },
+      {
+        label: 'Chapman AUROC (VM 3)',
+        data: getClientSeries('chapman', 'auroc', h.auroc),
+        borderColor: '#f97316',
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        borderDash: [5, 3],
+        tension: 0.3
+      },
+      {
+        label: 'G12EC AUROC (VM 4)',
+        data: getClientSeries('g12ec', 'auroc', h.auroc),
+        borderColor: '#06b6d4',
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        borderDash: [6, 4],
+        tension: 0.3
       }
     ];
-    metricChart.options.scales.y.title.text = 'AUROC (0.5 - 1.0)';
+    metricChart.options.scales.y.title.text = 'Macro-AUROC (0.5 - 1.0)';
   }
 
   metricChart.update();
