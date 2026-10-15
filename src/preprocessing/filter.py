@@ -75,10 +75,12 @@ class ECGPreprocessor:
 
     def process_record(self, raw_ecg: np.ndarray) -> np.ndarray:
         """
-        Pipeline lengkap: Filtering -> Length Standardization -> Z-score Normalization.
+        Pipeline lengkap: Length Standardization (ke 5000) -> Filtering -> Z-score Normalization.
+        Memotong/padding ke 5.000 sampel lebih dahulu menghemat komputasi 10x lipat dan mencegah NaN.
         Output shape: (12, 5000)
         """
-        filtered = self.apply_filters(raw_ecg)
-        length_adjusted = self.standardize_length(filtered)
-        normalized = self.normalize_zscore(length_adjusted)
+        cleaned = np.nan_to_num(raw_ecg, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+        length_adjusted = self.standardize_length(cleaned)
+        filtered = self.apply_filters(length_adjusted)
+        normalized = self.normalize_zscore(filtered)
         return normalized

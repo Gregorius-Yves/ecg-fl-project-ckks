@@ -53,35 +53,71 @@ class ECGDataset(Dataset):
         return len(self.record_files)
 
     def __getitem__(self, idx):
-        record_path = self.record_files[idx]
-        try:
-            # Baca sinyal mentah via wfdb
-            record = wfdb.rdrecord(record_path)
-            # Sinyal mentah shape: (samples, leads) -> transpose ke (leads, samples)
-            signal_data = record.p_signal.T
+        # Gunakan loop iteratif (bukan rekursi) untuk mencegah RecursionError jika ada file bermasalah
+        for attempt in range(min(10, len(self.record_files))):
+            current_idx = (idx + attempt) % len(self.record_files)
+            record_path = self.record_files[current_idx]
+            try:
+                signal_data = None
+                comments = []
 
-            # Jika jumlah lead kurang dari 12, pad channel
-            if signal_data.shape[0] < 12:
-                padded_leads = np.zeros((12, signal_data.shape[1]), dtype=np.float32)
-                padded_leads[:signal_data.shape[0], :] = signal_data
-                signal_data = padded_leads
-            elif signal_data.shape[0] > 12:
-                signal_data = signal_data[:12, :]
+                # Cara 1: Coba via wfdb.rdrecord
+                try:
+                    record = wfdb.rdrecord(record_path)
+                    if record.p_signal is not None:
+                        signal_data = record.p_signal.T
+                    elif hasattr(record, "d_signal") and record.d_signal is not None:
+                        signal_data = record.d_signal.T.astype(np.float32)
+                    if hasattr(record, "comments") and record.comments:
+                        comments = record.comments
+                except Exception:
+                    pass
 
-            # Praproses sinyal (Filtering 0.05-150Hz + Notch 50Hz + Length to 5000 + Z-score)
-            processed_signal = self.preprocessor.process_record(signal_data)
+                # Cara 2: Jika wfdb gagal, baca langsung file .mat (format standar CinC 2020 / G12EC / Chapman)
+                if signal_data is None:
+                    mat_path = record_path + ".mat"
+                    if os.path.exists(mat_path):
+                        from scipy.io import loadmat
+                        mat_dict = loadmat(mat_path)
+                        if "val" in mat_dict:
+                            signal_data = mat_dict["val"].astype(np.float32)
 
-            # Ekstraksi label diagnosis dari header
-            label_vec = np.zeros(len(self.classes), dtype=np.float32)
-            if hasattr(record, "comments"):
-                for comment in record.comments:
+                    # Baca comments dari header .hea
+                    hea_path = record_path + ".hea"
+                    if os.path.exists(hea_path):
+                        with open(hea_path, "r", encoding="utf-8", errors="ignore") as f:
+                            comments = [line.strip() for line in f if line.startswith("#")]
+
+                if signal_data is None:
+                    continue
+
+                # Bersihkan NaN dan Inf dari sensor
+                signal_data = np.nan_to_num(signal_data, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+
+                # Pastikan bentuk 2D (12, N)
+                if signal_data.ndim == 1:
+                    signal_data = signal_data.reshape(1, -1)
+                if signal_data.shape[0] < 12:
+                    padded_leads = np.zeros((12, signal_data.shape[1]), dtype=np.float32)
+                    padded_leads[:signal_data.shape[0], :] = signal_data
+                    signal_data = padded_leads
+                elif signal_data.shape[0] > 12:
+                    signal_data = signal_data[:12, :]
+
+                # Praproses sinyal (Standardize ke 5000 -> Filter -> Z-score)
+                processed_signal = self.preprocessor.process_record(signal_data)
+
+                # Ekstraksi label diagnosis
+                label_vec = np.zeros(len(self.classes), dtype=np.float32)
+                for comment in comments:
                     for cls_name, cls_idx in self.class_to_idx.items():
                         if cls_name in comment:
                             label_vec[cls_idx] = 1.0
 
-            return torch.tensor(processed_signal, dtype=torch.float32), torch.tensor(label_vec, dtype=torch.float32)
+                return torch.tensor(processed_signal, dtype=torch.float32), torch.tensor(label_vec, dtype=torch.float32)
 
-        except Exception as e:
-            # Jika ada satu file rusak/header error, lewati secara aman ke rekaman EKG asli berikutnya
-            next_idx = (idx + 1) % len(self.record_files)
-            return self.__getitem__(next_idx)
+            except Exception:
+                continue
+
+        # Fallback aman jika seluruh sampel dalam batch gagal dibaca
+        return torch.zeros((12, 5000), dtype=torch.float32), torch.zeros(len(self.classes), dtype=torch.float32)
