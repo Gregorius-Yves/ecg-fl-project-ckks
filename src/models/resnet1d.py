@@ -1,7 +1,7 @@
 """
 ResNet1D Architecture for 12-Lead ECG Multi-Label Classification
 Tailored for Federated Learning with Local Batch Normalization (FedBN)
-Input dimension: (Batch_Size, 12, 5000) -> 12 leads, 10s @ 500 Hz
+Input dimension: (Batch_Size, 12, 1000) -> 12 leads, 10s @ 100 Hz
 """
 
 import torch

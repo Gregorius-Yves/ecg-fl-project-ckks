@@ -26,7 +26,14 @@ class ECGDataset(Dataset):
     def __init__(self, data_dir: str, dataset_name: str, max_samples: int = None):
         self.data_dir = data_dir
         self.dataset_name = dataset_name.lower()
-        self.preprocessor = ECGPreprocessor(target_rate=500, target_duration=10)
+        self.preprocessor = ECGPreprocessor(
+            orig_rate=500,
+            target_rate=100,
+            target_duration=10,
+            lowcut=0.5,
+            highcut=45.0,
+            norm_method="zscore"
+        )
         self.classes = DIAGNOSTIC_CLASSES_27
         self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
 
@@ -104,8 +111,12 @@ class ECGDataset(Dataset):
                 elif signal_data.shape[0] > 12:
                     signal_data = signal_data[:12, :]
 
-                # Praproses sinyal (Standardize ke 5000 -> Filter -> Z-score)
-                processed_signal = self.preprocessor.process_record(signal_data)
+                # Praproses sinyal (Filtering 0.5-45Hz -> Resample 100Hz -> Z-score)
+                record_fs = 500
+                if "record" in locals() and hasattr(record, "fs") and record.fs:
+                    record_fs = int(record.fs)
+
+                processed_signal = self.preprocessor.process_record(signal_data, fs=record_fs)
 
                 # Ekstraksi label diagnosis
                 label_vec = np.zeros(len(self.classes), dtype=np.float32)
@@ -120,4 +131,4 @@ class ECGDataset(Dataset):
                 continue
 
         # Fallback aman jika seluruh sampel dalam batch gagal dibaca
-        return torch.zeros((12, 5000), dtype=torch.float32), torch.zeros(len(self.classes), dtype=torch.float32)
+        return torch.zeros((12, 1000), dtype=torch.float32), torch.zeros(len(self.classes), dtype=torch.float32)
