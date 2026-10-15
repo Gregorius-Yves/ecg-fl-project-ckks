@@ -181,17 +181,37 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
 
             pm.config.update(params)
 
-            # Hentikan proses sebelumnya jika masih berjalan
+            # 1. Hentikan SEMUA proses Flower server sebelumnya (baik dari UI maupun terminal CLI)
+            try:
+                subprocess.run(["pkill", "-9", "-f", "src.server"], timeout=1)
+                time.sleep(0.5)
+            except Exception:
+                pass
             if pm.server_process and pm.server_process.poll() is None:
                 try:
-                    pm.server_process.terminate()
-                    pm.server_process.wait(timeout=3)
-                except Exception:
                     pm.server_process.kill()
+                except Exception:
+                    pass
 
-            # Bersihkan log lama
+            # 2. Hapus file timing ronde dan bersihkan log
+            timing_file = BASE_DIR / "logs" / "round_timing.json"
+            if timing_file.exists():
+                try:
+                    timing_file.unlink()
+                except Exception:
+                    pass
+
             with open(SERVER_LOG_FILE, "w", encoding="utf-8") as f:
-                f.write(f"[{params.get('strategy', 'fedbn').upper()}] Memulai Flower Server Orchestrator...\n")
+                f.write(f"[{params.get('strategy', 'fedbn').upper()}] Memulai Flower Server Orchestrator (Ronde 1 - {pm.config['num_rounds']})...\n")
+
+            # 3. Reset data tracking pada UI
+            ClientTracker.client_logs = {"vm2": "", "vm3": "", "vm4": ""}
+            for k in ClientTracker.heartbeats:
+                ClientTracker.heartbeats[k]["current_round"] = 0
+                ClientTracker.heartbeats[k]["epoch"] = 0
+                ClientTracker.heartbeats[k]["batch"] = 0
+                ClientTracker.heartbeats[k]["measured_duration"] = 0
+                ClientTracker.heartbeats[k]["elapsed_in_round"] = 0
 
             log_output = open(SERVER_LOG_FILE, "a", encoding="utf-8")
 
@@ -238,17 +258,22 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
             return
 
         elif self.path == "/api/experiment/stop":
+            try:
+                subprocess.run(["pkill", "-9", "-f", "src.server"], timeout=1)
+            except Exception:
+                pass
             if pm.server_process and pm.server_process.poll() is None:
                 try:
                     pm.server_process.terminate()
-                    pm.server_process.wait(timeout=3)
+                    pm.server_process.wait(timeout=2)
                 except Exception:
                     pm.server_process.kill()
-                with open(SERVER_LOG_FILE, "a", encoding="utf-8") as f:
-                    f.write("\n[SERVER] Proses pelatihan dihentikan oleh pengguna dari Web UI.\n")
-
+            pm.server_process = None
             pm.start_time = None
             pm.round_timestamps = {}
+            with open(SERVER_LOG_FILE, "a", encoding="utf-8") as f:
+                f.write("\n[SERVER] Proses pelatihan dihentikan oleh pengguna dari Web UI.\n")
+
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
