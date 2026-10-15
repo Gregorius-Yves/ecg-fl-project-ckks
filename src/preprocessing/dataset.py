@@ -23,9 +23,11 @@ DIAGNOSTIC_CLASSES_27 = [
 
 
 class ECGDataset(Dataset):
-    def __init__(self, data_dir: str, dataset_name: str, max_samples: int = None):
+    def __init__(self, data_dir: str, dataset_name: str, max_samples: int = None, cache_in_ram: bool = True):
         self.data_dir = data_dir
         self.dataset_name = dataset_name.lower()
+        self.cache_in_ram = cache_in_ram
+        self.cache = {}
         self.preprocessor = ECGPreprocessor(
             orig_rate=500,
             target_rate=100,
@@ -60,6 +62,9 @@ class ECGDataset(Dataset):
         return len(self.record_files)
 
     def __getitem__(self, idx):
+        if self.cache_in_ram and idx in self.cache:
+            return self.cache[idx]
+
         # Gunakan loop iteratif (bukan rekursi) untuk mencegah RecursionError jika ada file bermasalah
         for attempt in range(min(10, len(self.record_files))):
             current_idx = (idx + attempt) % len(self.record_files)
@@ -125,7 +130,11 @@ class ECGDataset(Dataset):
                         if cls_name in comment:
                             label_vec[cls_idx] = 1.0
 
-                return torch.tensor(processed_signal, dtype=torch.float32), torch.tensor(label_vec, dtype=torch.float32)
+                x_tensor = torch.tensor(processed_signal, dtype=torch.float32)
+                y_tensor = torch.tensor(label_vec, dtype=torch.float32)
+                if self.cache_in_ram:
+                    self.cache[idx] = (x_tensor, y_tensor)
+                return x_tensor, y_tensor
 
             except Exception:
                 continue
