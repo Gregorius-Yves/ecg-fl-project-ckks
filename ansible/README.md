@@ -10,7 +10,7 @@ Direktori ini berisi seluruh kumpulan playbook, inventarisasi host, dan variabel
 | :--- | :--- | :--- | :--- | :--- |
 | **VM 1** | `10.34.100.114` | `fl-server` (Port 8080)<br>`fl-dashboard` (Port 8501) | Flower Central Server & Streamlit Dashboard | Agregasi model global & visualisasi real-time |
 | **VM 2** | `10.34.100.122` | `fl-client-ptbxl` | PTB-XL (~21.799 rekaman) | Feature shift & skema diagnosis SCP-ECG |
-| **VM 3** | `10.34.100.123` | `fl-client-chapman` | Chapman-Shaoxing (~10.646 rekaman) | Label distribution skew & sinyal perangkat GE MUSE |
+| **VM 3** | `10.34.100.123` | `fl-client-chapman` | Chapman-Shaoxing (~44.180 rekaman berlabel) | Label distribution skew & sinyal perangkat GE MUSE |
 | **VM 4** | `10.34.100.125` | `fl-client-g12ec` | G12EC CinC 2020 (~10.344 rekaman) | SNOMED-CT labels & durasi sinyal bervariasi |
 
 ---

@@ -20,19 +20,19 @@ from datetime import datetime
 
 DATASETS = {
     "ptbxl": {
-        "name": "PTB-XL (~21,799 ECG Records)",
+        "name": "PTB-XL (~21,799 raw / 19,532 berlabel ECG Records)",
         "url": "https://physionet.org/static/published-projects/ptb-xl/ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3.zip",
         "archive": "data/ptbxl.zip",
         "target_dir": "data/ptbxl"
     },
     "chapman": {
-        "name": "Chapman-Shaoxing (~10,646 ECG Records)",
+        "name": "Chapman-Shaoxing (~45,152 raw / 44,180 berlabel ECG Records)",
         "url": "https://physionet.org/static/published-projects/ecg-arrhythmia/a-large-scale-12-lead-electrocardiogram-database-for-arrhythmia-study-1.0.0.zip",
         "archive": "data/chapman.zip",
         "target_dir": "data/chapman"
     },
     "g12ec": {
-        "name": "G12EC Georgia 12-Lead ECG (~10,344 Records)",
+        "name": "G12EC Georgia 12-Lead ECG (~10,344 raw / 9,355 berlabel Records)",
         "url": "https://physionet.org/content/challenge-2020/get-zip/1.0.2/",
         "archive": "data/challenge2020_georgia.zip",
         "target_dir": "data/g12ec"

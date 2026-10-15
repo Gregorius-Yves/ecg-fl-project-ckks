@@ -32,6 +32,33 @@ import time
 import collections
 
 
+def _effective_cpu_count() -> int:
+    """Jumlah core yang benar-benar tersedia (affinity + kuota cgroup/Docker), bisa di-override TORCH_THREADS."""
+    env = os.environ.get("TORCH_THREADS")
+    if env and env.isdigit() and int(env) > 0:
+        return int(env)
+    try:
+        n = len(os.sched_getaffinity(0))
+    except Exception:
+        n = os.cpu_count() or 1
+    for path in ("/sys/fs/cgroup/cpu.max",):
+        try:
+            quota, period = open(path).read().split()[:2]
+            if quota != "max":
+                n = min(n, max(1, int(int(quota) / int(period))))
+        except Exception:
+            pass
+    try:
+        q = int(open("/sys/fs/cgroup/cpu/cpu.cfs_quota_us").read())
+        p = int(open("/sys/fs/cgroup/cpu/cpu.cfs_period_us").read())
+        if q > 0:
+            n = min(n, max(1, q // p))
+    except Exception:
+        pass
+    return max(1, n)
+
+
+
 class FastTensorLoader:
     """Loader batch langsung dari tensor di RAM (tanpa collate/worker overhead per-sampel)."""
     def __init__(self, dataset, batch_size: int, shuffle: bool = True, drop_last: bool = False):
@@ -165,7 +192,9 @@ class ECGFlowerClient(fl.client.NumPyClient):
         # Pastikan tensor float32 kontigu
         real_dataset.signals = torch.as_tensor(real_dataset.signals, dtype=torch.float32).contiguous()
         real_dataset.labels = torch.as_tensor(real_dataset.labels, dtype=torch.float32).contiguous()
-        torch.set_num_threads(os.cpu_count() or 1)
+        n_threads = _effective_cpu_count()
+        torch.set_num_threads(n_threads)
+        print(f"🧵 PyTorch threads: {n_threads} (cpu_count host={os.cpu_count()})", flush=True)
         self.train_loader = FastTensorLoader(real_dataset, batch_size=self.batch_size, shuffle=True, drop_last=True)
         self.eval_loader = FastTensorLoader(real_dataset, batch_size=max(self.batch_size, 128), shuffle=False)
 
