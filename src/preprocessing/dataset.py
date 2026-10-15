@@ -6,6 +6,7 @@ and 27-Class Multi-Label Harmonization.
 
 import os
 import glob
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
@@ -41,9 +42,12 @@ class ECGDataset(Dataset):
 
         # Cek apakah ada file tensor bersih yang sudah dipra-proses offline
         preprocessed_candidates = [
-            os.path.join(os.getcwd(), "data", f"{self.dataset_name}_preprocessed.pt"),
             os.path.join(self.data_dir, f"{self.dataset_name}_preprocessed.pt"),
             os.path.join(self.data_dir, "preprocessed.pt"),
+            os.path.join(os.getcwd(), "data", f"{self.dataset_name}_preprocessed.pt"),
+            os.path.join(os.path.expanduser("~"), "ecg-fl-project", "data", f"{self.dataset_name}_preprocessed.pt"),
+            f"/data/{self.dataset_name}/{self.dataset_name}_preprocessed.pt",
+            f"/home/jes/ecg-fl-project/data/{self.dataset_name}_preprocessed.pt",
             os.path.join(str(Path(self.data_dir).parent), f"{self.dataset_name}_preprocessed.pt")
         ]
         self.preprocessed_file = None
