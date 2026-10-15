@@ -1,0 +1,28 @@
+---
+# ==============================================================================
+# PLAYBOOK: Hentikan Seluruh FL Client di VM Klien (VM 2, 3, 4)
+# Cukup jalankan dari VM Server:
+#   ansible-playbook -i inventory.ini stop_clients.yml
+# ==============================================================================
+
+- name: Hentikan Flower Client di Seluruh Node Klien
+  hosts: clients
+  become: false
+  tasks:
+    - name: 1. Hentikan proses python3 src/client.py
+      ansible.builtin.shell: |
+        pkill -f "src/client.py" || true
+      args:
+        executable: /bin/bash
+
+    - name: 2. Konfirmasi proses telah berhenti
+      ansible.builtin.shell: |
+        pgrep -f "src/client.py" || echo "STOPPED"
+      args:
+        executable: /bin/bash
+      register: stop_status
+      changed_when: false
+
+    - name: 3. Status
+      ansible.builtin.debug:
+        msg: "🛑 [{{ inventory_hostname }}] Client {{ dataset_label }} telah dihentikan (Status: {{ stop_status.stdout | trim }})."

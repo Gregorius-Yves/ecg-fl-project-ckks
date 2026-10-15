@@ -1,0 +1,61 @@
+---
+# ==============================================================================
+# PLAYBOOK: Jalankan FL Client Native Python di Seluruh VM Klien (VM 2, 3, 4)
+# Menjalankan src/client.py di latar belakang (background) tanpa Docker
+# Cukup jalankan dari VM Server:
+#   ansible-playbook -i inventory.ini start_clients.yml
+# ==============================================================================
+
+- name: Mulai Flower Client di Seluruh Node Klien (Native Python)
+  hosts: clients
+  become: false
+  vars:
+    user_project_dir: "/home/{{ ansible_user }}/ecg-fl-project"
+    server_addr: "{{ fl_server_ip | default('10.34.100.114') }}:{{ fl_server_port | default(8080) }}"
+    batch_sz: "{{ fl_batch_size | default(128) }}"
+  tasks:
+    - name: 1. Tarik pembaruan kode terbaru dari Git
+      ansible.builtin.shell: |
+        git config --global --add safe.directory {{ user_project_dir }}
+        git pull origin main || true
+      args:
+        chdir: "{{ user_project_dir }}"
+      ignore_errors: true
+
+    - name: 2. Hentikan instance client lama jika sedang berjalan
+      ansible.builtin.shell: |
+        pkill -f "src/client.py" || true
+      args:
+        executable: /bin/bash
+
+    - name: 3. Pastikan direktori logs/ tersedia
+      ansible.builtin.file:
+        path: "{{ user_project_dir }}/logs"
+        state: directory
+        mode: "0775"
+
+    - name: 4. Jalankan Flower Client di background (nohup)
+      ansible.builtin.shell: |
+        if [ -d "venv" ]; then source venv/bin/activate; fi
+        nohup python3 src/client.py \
+          --server {{ server_addr }} \
+          --client_id {{ client_id }} \
+          --dataset {{ dataset_name }} \
+          --batch_size {{ batch_sz }} \
+          > logs/client.log 2>&1 &
+      args:
+        chdir: "{{ user_project_dir }}"
+        executable: /bin/bash
+
+    - name: 5. Tunggu proses client aktif dan periksa PID
+      ansible.builtin.shell: |
+        sleep 2
+        pgrep -f "src/client.py"
+      args:
+        executable: /bin/bash
+      register: client_pid
+      changed_when: false
+
+    - name: 6. Tampilkan Konfirmasi Status Klien
+      ansible.builtin.debug:
+        msg: "🟢 [{{ inventory_hostname }}] Client '{{ dataset_label }}' (ID: {{ client_id }}) BERHASIL AKTIF (PID: {{ client_pid.stdout | trim }})! Standby terhubung ke Server {{ server_addr }}."
