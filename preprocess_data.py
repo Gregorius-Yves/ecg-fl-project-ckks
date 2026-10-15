@@ -119,21 +119,37 @@ def discover_records(data_dir: str):
 def preprocess_dataset(dataset_name: str, data_dir: str, output_file: str, num_workers: int = None):
     print(f"\n==================================================================")
     print(f"🧹 Memulai Pra-pemrosesan Terpisah: {dataset_name.upper()}")
-    print(f"📂 Folder Sumber : {data_dir}")
-    print(f"💾 File Output   : {output_file}")
+    print(f"📂 Folder Input Utama : {data_dir}")
+    print(f"💾 File Output        : {output_file}")
     print(f"==================================================================")
 
-    if not os.path.exists(data_dir):
-        print(f"❌ Folder dataset '{data_dir}' tidak ditemukan! Pastikan dataset sudah diunduh.")
+    # Deteksi otomatis berbagai kemungkinan path direktori data EKG
+    candidate_dirs = [
+        data_dir,
+        os.path.join(os.getcwd(), "data", dataset_name),
+        os.path.join(os.path.expanduser("~"), "ecg-fl-project", "data", dataset_name),
+        f"/home/jes/ecg-fl-project/data/{dataset_name}",
+        f"data/{dataset_name}",
+        f"/data/{dataset_name}",
+    ]
+    
+    actual_data_dir = None
+    records = []
+    for c in candidate_dirs:
+        if c and os.path.exists(c):
+            found = discover_records(c)
+            if len(found) > 0:
+                actual_data_dir = c
+                records = found
+                print(f"🎯 Ditemukan {len(records)} rekaman EKG asli di: '{actual_data_dir}'")
+                break
+
+    if not actual_data_dir or len(records) == 0:
+        print(f"❌ Tidak ditemukan file rekaman (.hea) di '{data_dir}' maupun di kandidat lokasi: {candidate_dirs}")
         return False
 
-    records = discover_records(data_dir)
     total_records = len(records)
-    if total_records == 0:
-        print(f"❌ Tidak ditemukan file rekaman (.hea) di '{data_dir}'.")
-        return False
-
-    print(f"🔍 Ditemukan {total_records} rekaman EKG. Menjalankan pipeline pra-pemrosesan paralel...")
+    print(f"🔍 Memproses {total_records} rekaman EKG secara paralel...")
 
     preprocessor = ECGPreprocessor(
         orig_rate=500,
@@ -197,6 +213,18 @@ def preprocess_dataset(dataset_name: str, data_dir: str, output_file: str, num_w
     torch.save(payload, output_file)
     file_size_mb = os.path.getsize(output_file) / (1024 * 1024)
     print(f"🎉 SUKSES! File tersimpan: {output_file} ({file_size_mb:.1f} MB)")
+
+    # Pastikan file tensor juga tersedia di ~/ecg-fl-project/data/
+    fallback_output = os.path.expanduser(f"~/ecg-fl-project/data/{dataset_name}_preprocessed.pt")
+    if os.path.abspath(output_file) != os.path.abspath(fallback_output):
+        try:
+            os.makedirs(os.path.dirname(fallback_output), exist_ok=True)
+            if os.path.exists(fallback_output) or os.path.islink(fallback_output):
+                os.remove(fallback_output)
+            os.symlink(output_file, fallback_output)
+        except Exception:
+            pass
+
     print(f"   Kini saat training dimulai / di-restart, data langsung dimuat dalam 1 detik tanpa preprocessing ulang!\n")
     return True
 
@@ -215,7 +243,9 @@ def main():
     for ds in target_datasets:
         data_dir = args.data_dir or DATASETS.get(ds, f"data/{ds}")
         output_file = args.output or f"data/{ds}_preprocessed.pt"
-        preprocess_dataset(ds, data_dir, output_file, num_workers=args.workers)
+        ok = preprocess_dataset(ds, data_dir, output_file, num_workers=args.workers)
+        if not ok:
+            sys.exit(1)
 
 
 if __name__ == "__main__":

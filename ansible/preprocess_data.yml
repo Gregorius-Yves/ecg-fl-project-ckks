@@ -48,12 +48,21 @@
       register: prep_result
       changed_when: prep_result.rc == 0
 
-    - name: 3. Set izin kepemilikan file tensor .pt agar bisa dibaca Docker
+    - name: 2b. Tampilkan log proses pembersihan EKG
+      ansible.builtin.debug:
+        var: prep_result.stdout_lines
+      when: prep_result is changed and prep_result.stdout_lines is defined
+
+    - name: 3. Set izin kepemilikan file tensor .pt
       ansible.builtin.file:
-        path: "{{ data_dir }}/{{ dataset_name }}_preprocessed.pt"
+        path: "{{ item }}"
         owner: "{{ ansible_user }}"
         group: "{{ ansible_user }}"
         mode: "0664"
+      loop:
+        - "{{ data_dir }}/{{ dataset_name }}_preprocessed.pt"
+        - "{{ user_project_dir }}/data/{{ dataset_name }}_preprocessed.pt"
+      ignore_errors: true
 
     - name: 4. Buat symlink file .pt ke folder data proyek pengguna
       ansible.builtin.file:
