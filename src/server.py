@@ -68,14 +68,18 @@ def record_round_end(server_round: int):
 def get_strategy(strategy_name: str, num_rounds: int, min_fit_clients: int, min_available_clients: int, initial_params):
     strategy_name = strategy_name.lower()
 
+    local_epochs = int(os.environ.get("LOCAL_EPOCHS", 3))
+    batch_size = int(os.environ.get("BATCH_SIZE", 32))
+    lr = float(os.environ.get("LEARNING_RATE", 0.001))
+
     def fit_config(server_round: int):
         record_round_start(server_round)
         return {
             "current_round": server_round,
             "strategy": strategy_name,
-            "local_epochs": 3,
-            "batch_size": 32,
-            "lr": 0.001
+            "local_epochs": local_epochs,
+            "batch_size": batch_size,
+            "lr": lr
         }
 
     common_args = {
