@@ -181,6 +181,17 @@ class ECGFlowerClient(fl.client.NumPyClient):
         server_round = config.get("current_round", 1)
         epochs = config.get("local_epochs", self.epochs)
 
+        # Jika ronde 1, bersihkan riwayat log dan durasi dari eksperimen sebelumnya
+        if server_round == 1:
+            self.log_history.clear()
+            self.last_round_duration = 0.0
+            log_file = os.path.join(os.getcwd(), "logs", "client.log")
+            try:
+                with open(log_file, "w", encoding="utf-8") as f:
+                    f.write(f"=== [MEMULAI SESI BARU: RONDE 1] Strategi: {server_strategy.upper()} ===\n")
+            except Exception:
+                pass
+
         t_round_start = time.time()
         self.current_round_start_time = t_round_start
         self.strategy = server_strategy
@@ -285,6 +296,16 @@ def main():
 
     print(f"\n🏥 Starting ECG Client: {args.dataset.upper()} (ID: {args.client_id})")
     print(f"🔗 Target Server: {args.server} | Strategy: {args.strategy.upper()}")
+
+    # Bersihkan file log lama saat klien dimulai fresh
+    log_dir = os.path.join(os.getcwd(), "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, "client.log")
+    try:
+        with open(log_file, "w", encoding="utf-8") as f:
+            f.write(f"=== [START KLIEN {args.dataset.upper()} ID: {args.client_id}] Target: {args.server} ===\n")
+    except Exception:
+        pass
 
     client = ECGFlowerClient(
         client_id=args.client_id,
