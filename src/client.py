@@ -52,11 +52,17 @@ class HeartbeatThread(threading.Thread):
                 if os.path.exists(log_file):
                     try:
                         with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
-                            recent_logs = f.readlines()[-35:]
+                            recent_logs = f.readlines()[-30:]
                     except Exception:
                         pass
-                if not recent_logs and hasattr(self.client, "log_history") and self.client.log_history:
-                    recent_logs = [line + "\n" if not line.endswith("\n") else line for line in self.client.log_history]
+                if hasattr(self.client, "log_history") and self.client.log_history:
+                    mem_logs = [line + "\n" if not line.endswith("\n") else line for line in self.client.log_history]
+                    if not recent_logs:
+                        recent_logs = mem_logs[-30:]
+                    else:
+                        for l in mem_logs[-15:]:
+                            if l not in recent_logs:
+                                recent_logs.append(l)
 
                 payload = {
                     "client_id": self.client.client_id,

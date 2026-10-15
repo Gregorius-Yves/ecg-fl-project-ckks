@@ -51,7 +51,13 @@ class ClientTracker:
         dataset = str(data.get("dataset", "")).strip().lower()
         key = None
         for k, v in KNOWN_CLIENTS.items():
-            if str(v["id"]) == cid or v["dataset"] == dataset or (client_ip and v["ip"] == client_ip):
+            if str(v["id"]) == cid:
+                key = k
+                break
+            if dataset and (v["dataset"] in dataset or dataset in v["dataset"]):
+                key = k
+                break
+            if client_ip and v["ip"] == client_ip:
                 key = k
                 break
         if key:
