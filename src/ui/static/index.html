@@ -336,10 +336,18 @@
             </div>
             <div class="card-subtitle">Performa konvergensi model global & per-client</div>
           </div>
-          <div class="chart-tabs">
-            <button class="chart-tab-btn active" data-metric="loss">Loss</button>
-            <button class="chart-tab-btn" data-metric="f1">F1-Macro</button>
-            <button class="chart-tab-btn" data-metric="auroc">AUROC</button>
+          <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+            <!-- View Mode Switcher: Komparasi Strategi vs Per-Client -->
+            <div class="chart-mode-tabs">
+              <button class="chart-mode-btn active" data-mode="strategy">⚡ FedBN vs FedBB vs FedSOL</button>
+              <button class="chart-mode-btn" data-mode="client">🏥 Per-Client VM</button>
+            </div>
+            <!-- Metric Tabs -->
+            <div class="chart-tabs">
+              <button class="chart-tab-btn active" data-metric="f1">F1-Macro</button>
+              <button class="chart-tab-btn" data-metric="auroc">AUROC</button>
+              <button class="chart-tab-btn" data-metric="loss">Loss</button>
+            </div>
           </div>
         </div>
 

@@ -514,6 +514,40 @@ select:focus, input:focus {
   transition: width 0.4s ease;
 }
 
+/* Chart View Mode Switcher */
+.chart-mode-tabs {
+  display: flex;
+  background: var(--bg-subtle);
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  gap: 2px;
+}
+
+.chart-mode-btn {
+  padding: 0.28rem 0.65rem;
+  border: none;
+  background: transparent;
+  color: var(--text-sub);
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.chart-mode-btn:hover {
+  color: var(--text-main);
+}
+
+.chart-mode-btn.active {
+  background: #ffffff;
+  color: var(--brand-primary);
+  box-shadow: var(--shadow-sm);
+  font-weight: 700;
+}
+
 /* Charts Section */
 .chart-tabs {
   display: flex;

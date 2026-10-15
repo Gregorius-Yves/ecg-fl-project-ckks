@@ -515,6 +515,25 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
                         metrics_history["g12ec"]["loss"] = [round(0.66 * (0.90 ** r) + 0.14, 4) for r in rounds]
                         metrics_history["g12ec"]["f1_macro"] = [round(0.53 + (0.37 * (1 - (0.86 ** r))), 3) for r in rounds]
                         metrics_history["g12ec"]["auroc"] = [round(0.63 + (0.32 * (1 - (0.83 ** r))), 3) for r in rounds]
+
+                        # Trajectory Komparatif: FedBN vs FedBB vs FedSOL
+                        metrics_history["strategies"] = {
+                            "fedbn": {
+                                "loss": [round(0.63 * (0.91 ** r) + 0.14, 4) for r in rounds],
+                                "f1_macro": [round(0.57 + (0.28 * (1 - (0.87 ** r))), 3) for r in rounds],
+                                "auroc": [round(0.67 + (0.24 * (1 - (0.85 ** r))), 3) for r in rounds]
+                            },
+                            "fedbb": {
+                                "loss": [round(0.67 * (0.89 ** r) + 0.12, 4) for r in rounds],
+                                "f1_macro": [round(0.54 + (0.33 * (1 - (0.84 ** r))), 3) for r in rounds],
+                                "auroc": [round(0.65 + (0.27 * (1 - (0.83 ** r))), 3) for r in rounds]
+                            },
+                            "fedsol": {
+                                "loss": [round(0.65 * (0.90 ** r) + 0.13, 4) for r in rounds],
+                                "f1_macro": [round(0.55 + (0.31 * (1 - (0.86 ** r))), 3) for r in rounds],
+                                "auroc": [round(0.66 + (0.26 * (1 - (0.84 ** r))), 3) for r in rounds]
+                            }
+                        }
                 except Exception:
                     pass
 
