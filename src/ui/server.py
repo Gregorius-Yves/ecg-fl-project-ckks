@@ -17,7 +17,7 @@ import signal
 import subprocess
 import mimetypes
 from pathlib import Path
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
 PORT = int(os.environ.get("PORT", os.environ.get("STREAMLIT_SERVER_PORT", 8501)))
 HOST = os.environ.get("HOST", "0.0.0.0")
@@ -592,7 +592,7 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
 def run():
     print(f"🏥 CardioPulse FL Minimalist Dashboard Server active on http://{HOST}:{PORT}")
     server_address = (HOST, PORT)
-    httpd = HTTPServer(server_address, CardioPulseHTTPHandler)
+    httpd = ThreadingHTTPServer(server_address, CardioPulseHTTPHandler)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

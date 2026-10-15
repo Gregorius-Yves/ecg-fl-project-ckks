@@ -83,14 +83,14 @@ class HeartbeatThread(threading.Thread):
                     headers={"Content-Type": "application/json"},
                     method="POST"
                 )
-                with urllib.request.urlopen(req, timeout=2.5) as resp:
+                with urllib.request.urlopen(req, timeout=5.0) as resp:
                     if not self.has_logged_success:
                         print(f"✅ [HEARTBEAT] Terhubung ke Dashboard Web UI ({self.url})!", flush=True)
                         self.has_logged_success = True
                 consecutive_errors = 0
             except Exception as e:
                 consecutive_errors += 1
-                if consecutive_errors == 1 or consecutive_errors % 15 == 0:
+                if consecutive_errors == 1 or consecutive_errors % 30 == 0:
                     print(f"⚠️ [HEARTBEAT] Gagal kirim heartbeat ke Dashboard ({self.url}): {e}", flush=True)
             time.sleep(self.interval)
 
