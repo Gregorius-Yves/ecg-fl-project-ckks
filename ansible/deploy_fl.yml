@@ -243,6 +243,7 @@
         image: "{{ client_image_name }}"
         state: started
         restart_policy: "no"
+        shm_size: "2gb"
         volumes:
           - "{{ data_dir }}:/app/data:ro"
           - "{{ logs_dir_remote }}:/app/logs"

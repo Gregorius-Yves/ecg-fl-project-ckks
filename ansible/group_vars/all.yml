@@ -22,7 +22,7 @@ fl_strategy: "fedbn" # Opsi: "fedbn", "fedbb", "fedsol"
 fl_num_rounds: 50
 fl_min_fit_clients: 3
 fl_min_available_clients: 3
-fl_batch_size: 32
+fl_batch_size: 128 # Dioptimalkan untuk VM RAM 8GB (mereduksi jumlah batch & mempercepat training)
 fl_local_epochs: 3
 fl_learning_rate: 0.001
 

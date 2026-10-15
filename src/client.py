@@ -148,11 +148,15 @@ class ECGFlowerClient(fl.client.NumPyClient):
             raise FileNotFoundError(error_msg)
 
         print(f"✅ Memuat {len(real_dataset)} rekaman sinyal EKG asli dari '{self.data_dir}'.")
+        # Optimasi RAM & CPU: num_workers=0 jika tensor sudah ada di RAM, atau 2 jika membaca file disk
+        num_workers = 0 if getattr(real_dataset, "use_preprocessed", False) else min(2, os.cpu_count() or 1)
         self.train_loader = DataLoader(
             real_dataset,
             batch_size=self.batch_size,
             shuffle=True,
-            drop_last=True
+            drop_last=True,
+            num_workers=num_workers,
+            pin_memory=torch.cuda.is_available()
         )
 
     def get_parameters(self, config):

@@ -1,0 +1,58 @@
+---
+# ==============================================================================
+# PLAYBOOK: Pra-Pemrosesan Offline Paralel di Seluruh VM Klien EKG
+# Menjalankan preprocess_data.py di VM Klien (VM2, VM3, VM4) secara serentak
+# Cukup jalankan dari VM Server:
+#   ansible-playbook -i inventory.ini preprocess_data.yml
+# ==============================================================================
+
+- name: Pra-pemrosesan Sinyal EKG ke File Tensor Bersih di Semua Klien
+  hosts: clients
+  become: true
+  vars:
+    user_project_dir: "/home/{{ ansible_user }}/ecg-fl-project"
+  tasks:
+    - name: 1. Periksa ketersediaan file tensor .pt di {{ data_dir }}
+      ansible.builtin.stat:
+        path: "{{ data_dir }}/{{ dataset_name }}_preprocessed.pt"
+      register: pt_stat
+
+    - name: 2. Jalankan pembersihan sinyal offline jika belum pernah dipraproses
+      ansible.builtin.shell: |
+        if [ -d "venv" ]; then source venv/bin/activate; fi
+        python3 preprocess_data.py \
+          --dataset {{ dataset_name }} \
+          --data_dir {{ data_dir }} \
+          --output {{ data_dir }}/{{ dataset_name }}_preprocessed.pt
+      args:
+        chdir: "{{ user_project_dir }}"
+        executable: /bin/bash
+      when: not pt_stat.stat.exists
+      register: prep_result
+      changed_when: prep_result.rc == 0
+
+    - name: 3. Set izin kepemilikan file tensor .pt agar bisa dibaca Docker
+      ansible.builtin.file:
+        path: "{{ data_dir }}/{{ dataset_name }}_preprocessed.pt"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0664"
+
+    - name: 4. Buat symlink file .pt ke folder data proyek pengguna
+      ansible.builtin.file:
+        src: "{{ data_dir }}/{{ dataset_name }}_preprocessed.pt"
+        dest: "{{ user_project_dir }}/data/{{ dataset_name }}_preprocessed.pt"
+        state: link
+        force: true
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+      ignore_errors: true
+
+    - name: 5. Verifikasi ukuran file tensor yang siap dimuat ke RAM
+      ansible.builtin.shell: "ls -lh {{ data_dir }}/{{ dataset_name }}_preprocessed.pt | awk '{print $5}'"
+      register: file_size
+      changed_when: false
+
+    - name: 6. Laporan Status Tensor Bersih
+      ansible.builtin.debug:
+        msg: "🚀 [{{ inventory_hostname }}] Dataset '{{ dataset_label }}' siap dimuat langsung ke RAM 8GB! Ukuran tensor: {{ file_size.stdout | trim }}"
