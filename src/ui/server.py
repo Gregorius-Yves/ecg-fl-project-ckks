@@ -405,7 +405,7 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
                 "g12ec": {"loss": [], "f1_macro": [], "auroc": []}
             }
 
-            if os.path.exists(SERVER_LOG_FILE):
+            if is_running and os.path.exists(SERVER_LOG_FILE):
                 try:
                     with open(SERVER_LOG_FILE, "r", encoding="utf-8") as f:
                         lines = f.readlines()
