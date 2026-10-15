@@ -11,13 +11,19 @@
   tasks:
     - name: 1. Hentikan proses python3 src/client.py
       ansible.builtin.shell: |
-        pkill -f "src/client.py" || true
+        for pid in $(pgrep -f "[c]lient.py"); do
+          if [ "$pid" != "$$" ]; then
+            kill -9 "$pid" 2>/dev/null || true
+          fi
+        done
+        true
       args:
         executable: /bin/bash
+      failed_when: false
 
     - name: 2. Konfirmasi proses telah berhenti
       ansible.builtin.shell: |
-        pgrep -f "src/client.py" || echo "STOPPED"
+        pgrep -f "[c]lient.py" || echo "STOPPED"
       args:
         executable: /bin/bash
       register: stop_status

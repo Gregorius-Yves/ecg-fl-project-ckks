@@ -24,9 +24,15 @@
 
     - name: 2. Hentikan instance client lama jika sedang berjalan
       ansible.builtin.shell: |
-        pkill -f "src/client.py" || true
+        for pid in $(pgrep -f "[c]lient.py"); do
+          if [ "$pid" != "$$" ]; then
+            kill -9 "$pid" 2>/dev/null || true
+          fi
+        done
+        true
       args:
         executable: /bin/bash
+      failed_when: false
 
     - name: 3. Pastikan direktori logs/ tersedia
       ansible.builtin.file:
@@ -50,7 +56,7 @@
     - name: 5. Tunggu proses client aktif dan periksa PID
       ansible.builtin.shell: |
         sleep 2
-        pgrep -f "src/client.py"
+        pgrep -f "[c]lient.py" | head -n 1
       args:
         executable: /bin/bash
       register: client_pid
