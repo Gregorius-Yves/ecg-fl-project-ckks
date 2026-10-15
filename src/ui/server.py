@@ -128,6 +128,8 @@ class ClientTracker:
 # Global Process State Manager
 class ProcessManager:
     server_process = None
+    start_time = None
+    round_timestamps = {}  # {round_num: timestamp}
     config = {
         "strategy": "fedbn",
         "num_rounds": 50,
@@ -200,6 +202,9 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
             env["LEARNING_RATE"] = str(pm.config["learning_rate"])
             env["BATCH_SIZE"] = str(pm.config["batch_size"])
 
+            pm.start_time = time.time()
+            pm.round_timestamps = {}
+
             # Jalankan Flower Server di background
             pm.server_process = subprocess.Popen(
                 cmd,
@@ -225,6 +230,8 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
                 with open(SERVER_LOG_FILE, "a", encoding="utf-8") as f:
                     f.write("\n[SERVER] Proses pelatihan dihentikan oleh pengguna dari Web UI.\n")
 
+            pm.start_time = None
+            pm.round_timestamps = {}
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -285,15 +292,59 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
                 except Exception:
                     pass
 
+            # Kalkulasi Estimasi Waktu Selesai (ETA)
+            total_rounds = pm.config.get("num_rounds", 50)
+            elapsed_sec = int(time.time() - pm.start_time) if (is_running and pm.start_time) else 0
+
+            # Catat timestamp saat ronde baru terdeteksi
+            if is_running and current_round > 0 and current_round not in pm.round_timestamps:
+                pm.round_timestamps[current_round] = time.time()
+
+            if is_running and current_round > 1 and len(pm.round_timestamps) >= 2:
+                r_keys = sorted(pm.round_timestamps.keys())
+                t_first = pm.round_timestamps[r_keys[0]]
+                t_last = pm.round_timestamps[r_keys[-1]]
+                rounds_done = r_keys[-1] - r_keys[0]
+                avg_sec_per_round = max(30.0, (t_last - t_first) / max(1, rounds_done))
+            elif is_running:
+                # Estimasi awal untuk input 100 Hz (~120 detik per ronde di VM 2 PTB-XL)
+                avg_sec_per_round = 120.0
+            else:
+                avg_sec_per_round = 120.0
+
+            remaining_rounds = max(0, total_rounds - current_round)
+            eta_seconds = int(remaining_rounds * avg_sec_per_round) if is_running else 0
+
+            def format_duration(seconds: int) -> str:
+                if seconds <= 0:
+                    return "Selesai"
+                h = seconds // 3600
+                m = (seconds % 3600) // 60
+                s = seconds % 60
+                if h > 0:
+                    return f"{h} jam {m} menit"
+                elif m > 0:
+                    return f"{m} menit {s} dtk"
+                else:
+                    return f"{s} detik"
+
+            eta_formatted = format_duration(eta_seconds) if is_running else "Siap dimulai"
+            elapsed_formatted = format_duration(elapsed_sec) if is_running else "--"
+            speed_formatted = f"~{int(avg_sec_per_round)} dtk/ronde" if is_running else "--"
+
             status_payload = {
                 "status": "running" if is_running else "idle",
                 "current_round": current_round,
-                "total_rounds": pm.config.get("num_rounds", 50),
+                "total_rounds": total_rounds,
                 "strategy": pm.config.get("strategy", "fedbn"),
                 "clients": clients_status,
                 "connected_count": connected_count,
                 "total_clients": len(KNOWN_CLIENTS),
-                "metrics": metrics_history
+                "metrics": metrics_history,
+                "eta_seconds": eta_seconds,
+                "eta_formatted": eta_formatted,
+                "elapsed_formatted": elapsed_formatted,
+                "speed_formatted": speed_formatted
             }
 
             self.send_response(200)

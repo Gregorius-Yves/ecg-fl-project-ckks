@@ -479,6 +479,33 @@ select:focus, input:focus {
   overflow: hidden;
 }
 
+.progress-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.75rem;
+  font-size: 0.75rem;
+  color: var(--text-sub);
+}
+
+.progress-eta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #1e40af;
+}
+
+.progress-eta-item strong {
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+.progress-speed-item {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
 .progress-bar-fill {
   height: 100%;
   background: var(--brand-primary);

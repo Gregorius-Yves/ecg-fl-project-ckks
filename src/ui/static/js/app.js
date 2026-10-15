@@ -350,6 +350,16 @@ async function pollBackend() {
         updateProgressBar(appState.currentRound, appState.totalRounds);
       }
 
+      // Update Live ETA & Speed
+      const etaEl = document.getElementById('progressEtaText');
+      const speedEl = document.getElementById('progressSpeedText');
+      if (etaEl && data.eta_formatted) {
+        etaEl.textContent = data.eta_formatted;
+      }
+      if (speedEl && data.speed_formatted) {
+        speedEl.textContent = `Laju: ${data.speed_formatted}`;
+      }
+
       // Update metrics if available
       if (data.metrics && data.metrics.rounds && data.metrics.rounds.length > 0) {
         appState.metricsHistory = data.metrics;

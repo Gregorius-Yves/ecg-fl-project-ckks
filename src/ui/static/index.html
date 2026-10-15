@@ -171,8 +171,8 @@
               </div>
               <div class="client-right">
                 <div class="client-stats">
-                  <span>21,799 Rekaman</span>
-                  <strong>Feature Shift</strong>
+                  <span>21,799 Rekaman (Feature Shift)</span>
+                  <strong>Est: ~2.3 mnt / ronde</strong>
                 </div>
                 <span class="badge-status offline" id="badgeVm2">Offline</span>
               </div>
@@ -189,8 +189,8 @@
               </div>
               <div class="client-right">
                 <div class="client-stats">
-                  <span>10,646 Rekaman</span>
-                  <strong>Label Skew</strong>
+                  <span>10,646 Rekaman (Label Skew)</span>
+                  <strong>Est: ~1.1 mnt / ronde</strong>
                 </div>
                 <span class="badge-status offline" id="badgeVm3">Offline</span>
               </div>
@@ -207,15 +207,15 @@
               </div>
               <div class="client-right">
                 <div class="client-stats">
-                  <span>10,344 Rekaman</span>
-                  <strong>Duration Skew</strong>
+                  <span>10,344 Rekaman (Duration Skew)</span>
+                  <strong>Est: ~1.0 mnt / ronde</strong>
                 </div>
                 <span class="badge-status offline" id="badgeVm4">Offline</span>
               </div>
             </div>
           </div>
 
-          <!-- Progress Bar Ronde Federasi -->
+          <!-- Progress Bar Ronde Federasi & Live ETA -->
           <div class="progress-container">
             <div class="progress-header">
               <span id="progressRoundText">Ronde Federasi: Menunggu Memulai...</span>
@@ -223,6 +223,15 @@
             </div>
             <div class="progress-bar-bg">
               <div class="progress-bar-fill" id="progressBarFill"></div>
+            </div>
+            <div class="progress-footer">
+              <div class="progress-eta-item">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <span>Estimasi Selesai: <strong id="progressEtaText">Siap dimulai</strong></span>
+              </div>
+              <div class="progress-speed-item">
+                <span id="progressSpeedText">Laju: --</span>
+              </div>
             </div>
           </div>
         </div>
