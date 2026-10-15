@@ -31,6 +31,28 @@ import time
 
 import collections
 
+
+class FastTensorLoader:
+    """Loader batch langsung dari tensor di RAM (tanpa collate/worker overhead per-sampel)."""
+    def __init__(self, dataset, batch_size: int, shuffle: bool = True, drop_last: bool = False):
+        self.dataset = dataset
+        self.signals = dataset.signals
+        self.labels = dataset.labels
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+        self.drop_last = drop_last
+
+    def __len__(self):
+        n = len(self.signals)
+        return n // self.batch_size if self.drop_last else (n + self.batch_size - 1) // self.batch_size
+
+    def __iter__(self):
+        n = len(self.signals)
+        idx = torch.randperm(n) if self.shuffle else torch.arange(n)
+        for i in range(len(self)):
+            b = idx[i * self.batch_size:(i + 1) * self.batch_size]
+            yield self.signals[b], self.labels[b]
+
 class HeartbeatThread(threading.Thread):
     def __init__(self, client, server_address: str, interval: float = 2.0):
         super().__init__(daemon=True)
@@ -46,25 +68,13 @@ class HeartbeatThread(threading.Thread):
         consecutive_errors = 0
         while self.running:
             try:
-                # Ambil 30 baris log terakhir dari logs/client.log atau ring buffer log_history
+                # Hanya gunakan log sesi berjalan (in-memory) agar tidak ada log basi dari file lama
                 recent_logs = []
-                log_file = os.path.join(os.getcwd(), "logs", "client.log")
-                if os.path.exists(log_file):
-                    try:
-                        with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
-                            recent_logs = f.readlines()[-30:]
-                    except Exception:
-                        pass
                 if hasattr(self.client, "log_history") and self.client.log_history:
-                    mem_logs = [line + "\n" if not line.endswith("\n") else line for line in self.client.log_history]
-                    if not recent_logs:
-                        recent_logs = mem_logs[-30:]
-                    else:
-                        for l in mem_logs[-15:]:
-                            if l not in recent_logs:
-                                recent_logs.append(l)
+                    recent_logs = [line if line.endswith("\n") else line + "\n" for line in list(self.client.log_history)[-30:]]
 
                 payload = {
+                    "log_version": 2,
                     "client_id": self.client.client_id,
                     "dataset": self.client.dataset_name,
                     "status": getattr(self.client, "current_status", "online"),
@@ -139,25 +149,25 @@ class ECGFlowerClient(fl.client.NumPyClient):
 
         if len(real_dataset) == 0:
             error_msg = (
-                f"\n❌ [ZERO FABRICATION POLICY] Dataset asli '{self.dataset_name}' tidak ditemukan di '{self.data_dir}'!\n"
-                f"   Sistem ini strictly menolak data fabrikasi/dummy.\n"
-                f"   Silakan unduh dataset asli PhysioNet terlebih dahulu dengan perintah:\n"
-                f"   python3 download_data.py --dataset {self.dataset_name}\n"
+                f"\n❌ [ZERO FABRICATION POLICY] File dataset pra-proses '{self.dataset_name}_preprocessed.pt' tidak ditemukan!\n"
+                f"   Training hanya memakai tensor hasil preprocessing (tidak membaca .hea/.dat langsung).\n"
+                f"   Jalankan: python3 download_data.py --dataset {self.dataset_name}\n"
+                f"   lalu:     python3 preprocess_data.py --dataset {self.dataset_name}\n"
             )
             print(error_msg)
             raise FileNotFoundError(error_msg)
 
         print(f"✅ Memuat {len(real_dataset)} rekaman sinyal EKG asli dari '{self.data_dir}'.")
-        # Optimasi RAM & CPU: num_workers=0 jika tensor sudah ada di RAM, atau 2 jika membaca file disk
-        num_workers = 0 if getattr(real_dataset, "use_preprocessed", False) else min(2, os.cpu_count() or 1)
-        self.train_loader = DataLoader(
-            real_dataset,
-            batch_size=self.batch_size,
-            shuffle=True,
-            drop_last=True,
-            num_workers=num_workers,
-            pin_memory=torch.cuda.is_available()
-        )
+        # Optimasi RAM: baca & praproses SEKALI ke tensor di RAM, lalu semua epoch/ronde berjalan dari memori
+        if not getattr(real_dataset, "use_preprocessed", False):
+            real_dataset.cache_in_ram = False  # cache per-worker tidak berguna & boros
+            real_dataset.preload_to_ram(num_workers=min(4, os.cpu_count() or 1))
+        # Pastikan tensor float32 kontigu
+        real_dataset.signals = torch.as_tensor(real_dataset.signals, dtype=torch.float32).contiguous()
+        real_dataset.labels = torch.as_tensor(real_dataset.labels, dtype=torch.float32).contiguous()
+        torch.set_num_threads(os.cpu_count() or 1)
+        self.train_loader = FastTensorLoader(real_dataset, batch_size=self.batch_size, shuffle=True, drop_last=True)
+        self.eval_loader = FastTensorLoader(real_dataset, batch_size=max(self.batch_size, 128), shuffle=False)
 
     def get_parameters(self, config):
         """Ambil parameter model untuk dikirim ke server"""
@@ -173,10 +183,10 @@ class ECGFlowerClient(fl.client.NumPyClient):
             # FedBN: Hanya update layer non-BN
             non_bn_keys = [k for k in state_dict.keys() if not is_batchnorm_param(k)]
             for k, param in zip(non_bn_keys, parameters):
-                state_dict[k] = torch.tensor(param).to(self.device)
+                state_dict[k] = torch.from_numpy(np.ascontiguousarray(param)).to(self.device)
         else:
             for k, param in zip(state_dict.keys(), parameters):
-                state_dict[k] = torch.tensor(param).to(self.device)
+                state_dict[k] = torch.from_numpy(np.ascontiguousarray(param)).to(self.device)
         self.model.load_state_dict(state_dict)
 
     def fit(self, parameters, config):
@@ -189,6 +199,7 @@ class ECGFlowerClient(fl.client.NumPyClient):
         if server_round == 1:
             self.log_history.clear()
             self.last_round_duration = 0.0
+            self.log_history.append(f"=== [MEMULAI SESI BARU: RONDE 1] Strategi: {server_strategy.upper()} ===")
             print(f"\n=== [MEMULAI SESI BARU: RONDE 1] Strategi: {server_strategy.upper()} ===", flush=True)
 
         t_round_start = time.time()
@@ -198,6 +209,7 @@ class ECGFlowerClient(fl.client.NumPyClient):
         self.current_status = "training"
         self.current_detail = f"Ronde {server_round} (Memulai)"
         print(f"\n📢 [ROUND {server_round}] Instruksi dari Server: Menjalankan Strategi '{self.strategy.upper()}' ({epochs} epoch)")
+        self.log_history.append(f"📢 [ROUND {server_round}] Strategi '{self.strategy.upper()}' ({epochs} epoch)")
 
         # Sesuaikan Loss Function & Optimizer sesuai perintah Server
         if self.strategy == "fedbb":
@@ -214,9 +226,10 @@ class ECGFlowerClient(fl.client.NumPyClient):
         self.model.train()
         total_loss = 0.0
         total_batches = len(self.train_loader)
+        loss_acc = torch.zeros((), device=self.device)
 
         for epoch in range(epochs):
-            running_epoch_loss = 0.0
+            epoch_acc = torch.zeros((), device=self.device)
             for batch_idx, (x, y) in enumerate(self.train_loader):
                 x, y = x.to(self.device), y.to(self.device)
 
@@ -231,12 +244,13 @@ class ECGFlowerClient(fl.client.NumPyClient):
                     loss.backward()
                     self.optimizer.step()
 
-                total_loss += loss.item()
-                running_epoch_loss += loss.item()
+                # Akumulasi di device (hindari sinkronisasi .item() tiap batch)
+                loss_acc += loss.detach()
+                epoch_acc += loss.detach()
 
                 # Cetak progress setiap 25 batch agar terlihat aktif di terminal
                 if (batch_idx + 1) % 25 == 0 or (batch_idx + 1) == total_batches:
-                    avg_b_loss = running_epoch_loss / (batch_idx + 1)
+                    avg_b_loss = epoch_acc.item() / (batch_idx + 1)
                     pct = ((batch_idx + 1) / total_batches) * 100
                     elapsed_so_far = round(time.time() - t_round_start, 1)
                     self.current_epoch = epoch + 1
@@ -247,6 +261,7 @@ class ECGFlowerClient(fl.client.NumPyClient):
                     print(msg, flush=True)
 
         num_examples = len(self.train_loader.dataset)
+        total_loss = loss_acc.item()
         avg_loss = total_loss / (epochs * len(self.train_loader))
         round_duration = round(time.time() - t_round_start, 2)
         self.last_round_duration = round_duration
@@ -269,15 +284,14 @@ class ECGFlowerClient(fl.client.NumPyClient):
         self.current_detail = "Evaluasi Model Global"
         self.set_parameters(parameters)
         self.model.eval()
-        total_loss = 0.0
-        with torch.no_grad():
-            for x, y in self.train_loader:
+        total_loss = torch.zeros((), device=self.device)
+        with torch.inference_mode():
+            for x, y in self.eval_loader:
                 x, y = x.to(self.device), y.to(self.device)
                 logits = self.model(x)
-                loss = self.criterion(logits, y)
-                total_loss += loss.item()
+                total_loss += self.criterion(logits, y)
 
-        avg_loss = total_loss / len(self.train_loader)
+        avg_loss = total_loss.item() / len(self.eval_loader)
         self.current_status = "online"
         self.current_detail = "Online (Standby)"
         return float(avg_loss), len(self.train_loader.dataset), {"val_loss": float(avg_loss)}

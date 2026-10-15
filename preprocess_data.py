@@ -27,7 +27,7 @@ import wfdb
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from src.preprocessing.filter import ECGPreprocessor
-from src.preprocessing.dataset import DIAGNOSTIC_CLASSES_27
+from src.preprocessing.dataset import DIAGNOSTIC_CLASSES_27, parse_dx_labels, build_ptbxl_label_map
 
 DATASETS = {
     "ptbxl": "data/ptbxl",
@@ -36,7 +36,7 @@ DATASETS = {
 }
 
 
-def process_single_record(record_path: str, preprocessor, class_to_idx):
+def process_single_record(record_path: str, preprocessor, class_to_idx, label_override=None):
     """Memproses 1 rekaman EKG mentah menjadi tensor bersih (12, 1000) dan label (27,)"""
     try:
         signal_data = None
@@ -91,12 +91,11 @@ def process_single_record(record_path: str, preprocessor, class_to_idx):
         # 3-Stage Pipeline: Bandpass 0.5-45Hz -> Resample 100Hz (1000 samples) -> Z-score
         processed_signal = preprocessor.process_record(signal_data, fs=record_fs)
 
-        # Label vector (27 classes)
-        label_vec = np.zeros(len(class_to_idx), dtype=np.float32)
-        for comment in comments:
-            for cls_name, cls_idx in class_to_idx.items():
-                if cls_name in comment:
-                    label_vec[cls_idx] = 1.0
+        # Label vector (27 classes): PTB-XL dari CSV (override), lainnya dari baris '#Dx:' (kode SNOMED)
+        if label_override is not None:
+            label_vec = np.array(label_override, dtype=np.float32)
+        else:
+            label_vec = parse_dx_labels(comments, list(class_to_idx.keys()))
 
         return processed_signal, label_vec
 
@@ -148,6 +147,20 @@ def preprocess_dataset(dataset_name: str, data_dir: str, output_file: str, num_w
         print(f"❌ Tidak ditemukan file rekaman (.hea) di '{data_dir}' maupun di kandidat lokasi: {candidate_dirs}")
         return False
 
+    # PTB-XL: label dari ptbxl_database.csv; pakai 500 Hz saja agar tidak duplikat dengan 100 Hz
+    label_map = {}
+    if dataset_name == "ptbxl":
+        label_map = build_ptbxl_label_map(actual_data_dir)
+        if not label_map:
+            print("❌ ptbxl_database.csv tidak ditemukan; label PTB-XL tidak dapat dibuat.")
+            return False
+        hr = [r for r in records if f"records500" in r]
+        if hr:
+            records = hr
+        # Buang rekaman tanpa padanan kelas 27
+        records = [r for r in records if label_map.get(os.path.normpath(r)) is not None
+                   and label_map[os.path.normpath(r)].sum() > 0]
+
     total_records = len(records)
     print(f"🔍 Memproses {total_records} rekaman EKG secara paralel...")
 
@@ -172,12 +185,13 @@ def preprocess_dataset(dataset_name: str, data_dir: str, output_file: str, num_w
     processed_count = 0
     with ProcessPoolExecutor(max_workers=num_workers) as executor:
         # Submit all tasks
-        futures = {executor.submit(process_single_record, r, preprocessor, class_to_idx): r for r in records}
+        futures = {executor.submit(process_single_record, r, preprocessor, class_to_idx,
+                                   label_map.get(os.path.normpath(r))): r for r in records}
 
         for future in as_completed(futures):
             processed_count += 1
             sig, lbl = future.result()
-            if sig is not None and lbl is not None:
+            if sig is not None and lbl is not None and lbl.sum() > 0:
                 clean_signals.append(sig)
                 clean_labels.append(lbl)
 
@@ -194,10 +208,17 @@ def preprocess_dataset(dataset_name: str, data_dir: str, output_file: str, num_w
     print(f"\n✅ Pembersihan selesai dalam {elapsed_total:.1f} detik ({elapsed_total/60:.2f} menit).")
     print(f"   Rekaman valid berhasil diproses: {valid_count} dari {total_records}")
 
+    if valid_count == 0:
+        print("❌ Tidak ada rekaman dengan label valid. Periksa format header (#Dx) / CSV label.")
+        return False
+
     # Konversi ke PyTorch Tensor
     print(f"📦 Mengompilasi menjadi Tensor PyTorch (N, 12, 1000)...")
     signals_tensor = torch.tensor(np.array(clean_signals), dtype=torch.float32)
     labels_tensor = torch.tensor(np.array(clean_labels), dtype=torch.float32)
+    print("🏷️  Distribusi label per kelas:")
+    for i, c in enumerate(DIAGNOSTIC_CLASSES_27):
+        print(f"   {c:7s}: {int(labels_tensor[:, i].sum())}")
 
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     payload = {

@@ -22,6 +22,74 @@ DIAGNOSTIC_CLASSES_27 = [
     "RBBB", "SA", "SB", "NSR", "STach", "SVPB", "TAb", "TInv", "VPB"
 ]
 
+# SNOMED-CT code -> kelas (standar PhysioNet/CinC 2020; dipakai Chapman & G12EC pada baris '#Dx:')
+SNOMED_TO_CLASS = {
+    "270492004": "IAVB", "164889003": "AF", "164890007": "AFL", "426627000": "Brady",
+    "713427006": "CRBBB", "713426002": "IRBBB", "445211001": "LAnFB", "39732003": "LAD",
+    "164909002": "LBBB", "251146004": "LQRSV", "698252002": "NSIVCB", "10370003": "PR",
+    "284470004": "PAC", "427172004": "PVC", "164947007": "LPR", "111975006": "LQT",
+    "164917005": "QAb", "47665007": "RAD", "59118001": "RBBB", "427393009": "SA",
+    "426177001": "SB", "426783006": "NSR", "427084000": "STach", "63593006": "SVPB",
+    "164934002": "TAb", "59931005": "TInv", "164884008": "VPB",
+}
+
+# PTB-XL SCP code -> kelas 27 (pemetaan aproksimasi untuk kode yang punya padanan)
+SCP_TO_CLASS = {
+    "NORM": "NSR", "AFIB": "AF", "AFLT": "AFL", "SBRAD": "SB", "STACH": "STach",
+    "SARRH": "SA", "CRBBB": "CRBBB", "IRBBB": "IRBBB", "CLBBB": "LBBB", "ILBBB": "LBBB",
+    "LAFB": "LAnFB", "1AVB": "IAVB", "PVC": "PVC", "PAC": "PAC", "LNGQT": "LQT",
+    "INVT": "TInv", "ABQRS": "QAb", "NDT": "TAb", "NST_": "TAb", "LOWT": "TAb",
+    "IVCD": "NSIVCB",
+}
+
+
+def parse_dx_labels(comments, classes=None):
+    """Ekstrak vektor label 27-kelas dari komentar header WFDB (baris 'Dx: kode,kode')."""
+    classes = classes or DIAGNOSTIC_CLASSES_27
+    idx = {c: i for i, c in enumerate(classes)}
+    vec = np.zeros(len(classes), dtype=np.float32)
+    for comment in comments or []:
+        line = comment.strip().lstrip("#").strip()
+        if not line.lower().startswith("dx"):
+            continue
+        _, _, rhs = line.partition(":")
+        for tok in rhs.replace(";", ",").split(","):
+            tok = tok.strip()
+            cls = SNOMED_TO_CLASS.get(tok) or (tok if tok in idx else None)
+            if cls is not None:
+                vec[idx[cls]] = 1.0
+    return vec
+
+
+def build_ptbxl_label_map(ptbxl_dir):
+    """Baca ptbxl_database.csv -> {path rekaman tanpa ekstensi: vektor label 27 kelas}."""
+    import ast
+    csv_path = None
+    for root, _, files in os.walk(ptbxl_dir):
+        if "ptbxl_database.csv" in files:
+            csv_path = os.path.join(root, "ptbxl_database.csv")
+            break
+    if csv_path is None:
+        return {}
+    base = os.path.dirname(csv_path)
+    idx = {c: i for i, c in enumerate(DIAGNOSTIC_CLASSES_27)}
+    df = pd.read_csv(csv_path)
+    mapping = {}
+    for _, row in df.iterrows():
+        vec = np.zeros(len(DIAGNOSTIC_CLASSES_27), dtype=np.float32)
+        try:
+            codes = ast.literal_eval(row["scp_codes"])
+        except Exception:
+            codes = {}
+        for code in codes:
+            cls = SCP_TO_CLASS.get(code)
+            if cls:
+                vec[idx[cls]] = 1.0
+        for col in ("filename_hr", "filename_lr"):
+            if col in df.columns and isinstance(row[col], str):
+                mapping[os.path.normpath(os.path.join(base, row[col]))] = vec
+    return mapping
+
 
 class ECGDataset(Dataset):
     def __init__(self, data_dir: str, dataset_name: str, max_samples: int = None, cache_in_ram: bool = True):
@@ -61,16 +129,20 @@ class ECGDataset(Dataset):
             data = torch.load(self.preprocessed_file, weights_only=False)
             self.signals = data["signals"]
             self.labels = data["labels"]
+            if float(self.labels.sum()) == 0.0:
+                raise ValueError(
+                    f"❌ Label di '{self.preprocessed_file}' SEMUA NOL (model tidak bisa belajar).\n"
+                    f"   Hapus file tersebut lalu jalankan ulang: python3 preprocess_data.py --dataset {self.dataset_name}"
+                )
             if max_samples and max_samples < len(self.signals):
                 self.signals = self.signals[:max_samples]
                 self.labels = self.labels[:max_samples]
             self.use_preprocessed = True
-            print(f"✅ Berhasil memuat {len(self.signals)} rekaman pra-proses (Bypass I/O dan filtering runtime).", flush=True)
+            print(f"✅ Berhasil memuat {len(self.signals)} rekaman pra-proses (tanpa membaca .hea/.dat saat training).", flush=True)
         else:
+            # Training TIDAK membaca file mentah .hea/.dat; wajib lewat preprocess_data.py
             self.use_preprocessed = False
-            self.record_files = self._discover_records()
-            if max_samples and max_samples < len(self.record_files):
-                self.record_files = self.record_files[:max_samples]
+            self.record_files = []
 
     def _discover_records(self):
         """Mencari semua rekaman .hea di folder dataset (mengabaikan file macOS metadata ._*)"""
@@ -86,6 +158,27 @@ class ECGDataset(Dataset):
             if not base_filename.startswith("._") and not base_filename.startswith("."):
                 valid_records.append(os.path.splitext(r)[0])
         return sorted(valid_records)
+
+    def preload_to_ram(self, num_workers: int = 0, batch_size: int = 256):
+        """Baca & praproses seluruh rekaman SEKALI (paralel), simpan sebagai tensor kontigu di RAM.
+        Setelah ini dataset bekerja seperti data pra-proses (tanpa I/O disk per epoch)."""
+        if self.use_preprocessed:
+            return
+        from torch.utils.data import DataLoader
+        loader = DataLoader(self, batch_size=batch_size, shuffle=False,
+                            num_workers=num_workers, persistent_workers=False)
+        xs, ys = [], []
+        total = len(self)
+        done = 0
+        for x, y in loader:
+            xs.append(x)
+            ys.append(y)
+            done += len(x)
+            print(f"   📥 Preload ke RAM: {done}/{total}", flush=True)
+        self.signals = torch.cat(xs).contiguous()
+        self.labels = torch.cat(ys).contiguous()
+        self.cache = {}
+        self.use_preprocessed = True
 
     def __len__(self):
         if self.use_preprocessed:

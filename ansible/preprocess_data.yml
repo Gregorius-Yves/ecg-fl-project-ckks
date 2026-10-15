@@ -44,7 +44,7 @@
       args:
         chdir: "{{ user_project_dir }}"
         executable: /bin/bash
-      when: not pt_stat.stat.exists
+      when: not pt_stat.stat.exists or (force | default(false) | bool)
       register: prep_result
       changed_when: prep_result.rc == 0
 

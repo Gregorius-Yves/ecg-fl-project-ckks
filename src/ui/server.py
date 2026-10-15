@@ -61,7 +61,8 @@ class ClientTracker:
                 key = k
                 break
         if key:
-            if "logs" in data and data["logs"]:
+            # Hanya terima log dari klien versi baru (log sesi berjalan). Klien lama mengirim isi client.log basi.
+            if data.get("log_version", 1) >= 2 and "logs" in data and data["logs"]:
                 cls.client_logs[key] = str(data["logs"])
             was_registered = key in cls.heartbeats and (time.time() - cls.heartbeats[key]["last_seen"] < 8.0)
             if not was_registered:
@@ -76,6 +77,18 @@ class ClientTracker:
                 "measured_duration": data.get("measured_duration", 0),
                 "elapsed_in_round": data.get("elapsed_in_round", 0)
             }
+
+    @classmethod
+    def get_client_log(cls, key):
+        """Kembalikan log klien; tandai jika klien sudah offline (log basi)."""
+        log = cls.client_logs.get(key, "")
+        if not log:
+            return ""
+        hb = cls.heartbeats.get(key)
+        if hb is None or (time.time() - hb["last_seen"]) >= 8.0:
+            cls.client_logs[key] = ""  # klien offline: buang log basi
+            return ""
+        return log
 
     @classmethod
     def get_established_connections(cls):
@@ -407,7 +420,7 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
 
             if is_running and os.path.exists(SERVER_LOG_FILE):
                 try:
-                    with open(SERVER_LOG_FILE, "r", encoding="utf-8") as f:
+                    with open(SERVER_LOG_FILE, "r", encoding="utf-8", errors="ignore") as f:
                         lines = f.readlines()
                         for line in lines:
                             if "[ROUND " in line:
@@ -531,7 +544,7 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
             if source == "server":
                 logs = server_log
             elif source in ClientTracker.client_logs:
-                client_log = ClientTracker.client_logs.get(source, "")
+                client_log = ClientTracker.get_client_log(source)
                 if client_log:
                     logs = client_log
                 else:
@@ -542,7 +555,7 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
                 combined.append("=== [SERVER ORCHESTRATOR LOGS] ===")
                 combined.append(server_log.strip())
                 for ckey, cinfo in KNOWN_CLIENTS.items():
-                    clog = ClientTracker.client_logs.get(ckey, "")
+                    clog = ClientTracker.get_client_log(ckey)
                     combined.append(f"\n=== [{cinfo['name']} LOGS] ===")
                     if clog:
                         combined.append(clog.strip())
