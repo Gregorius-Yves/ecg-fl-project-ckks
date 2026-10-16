@@ -1,77 +1,54 @@
 ---
 # ==============================================================================
-# PLAYBOOK: Pra-Pemrosesan Offline Paralel di Seluruh VM Klien EKG
-# Menjalankan preprocess_data.py di VM Klien (VM2, VM3, VM4) secara serentak
-# Cukup jalankan dari VM Server:
+# PLAYBOOK: Pra-Pemrosesan Offline Paralel Berbasis Docker di VM Klien EKG
+# Menjalankan pembersihan sinyal di dalam Docker Container terisolasi
+# Penggunaan:
 #   ansible-playbook -i inventory.ini preprocess_data.yml
 # ==============================================================================
 
-- name: Pra-pemrosesan Sinyal EKG ke File Tensor Bersih di Semua Klien
+- name: Pra-pemrosesan Sinyal EKG ke File Tensor Bersih via Docker
   hosts: clients
   become: true
-  vars:
-    user_project_dir: "/home/{{ ansible_user }}/ecg-fl-project"
   tasks:
-    - name: 0. Update kode terbaru di seluruh VM Klien (Git pull)
-      ansible.builtin.shell: |
-        git config --global --add safe.directory {{ user_project_dir }}
-        git pull origin main || true
-      args:
-        chdir: "{{ user_project_dir }}"
-      become: false
-      ignore_errors: true
-
-    - name: 0b. Pastikan file preprocess_data.py tersinkronisasi dari Server ke Klien
-      ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../preprocess_data.py"
-        dest: "{{ user_project_dir }}/preprocess_data.py"
-        mode: "0755"
-        owner: "{{ ansible_user }}"
-        group: "{{ ansible_user }}"
-
     - name: 1. Periksa ketersediaan file tensor .pt di {{ data_dir }}
       ansible.builtin.stat:
         path: "{{ data_dir }}/{{ dataset_name }}_preprocessed.pt"
       register: pt_stat
 
-    - name: 2. Jalankan pembersihan sinyal offline jika belum pernah dipraproses
-      ansible.builtin.shell: |
-        if [ -d "venv" ]; then source venv/bin/activate; fi
-        python3 preprocess_data.py \
-          --dataset {{ dataset_name }} \
-          --data_dir {{ data_dir }} \
-          --output {{ data_dir }}/{{ dataset_name }}_preprocessed.pt
-      args:
-        chdir: "{{ user_project_dir }}"
-        executable: /bin/bash
+    - name: 2. Pastikan Docker Image {{ fl_image_name }} tersedia
+      community.docker.docker_image:
+        name: "{{ fl_image_name }}"
+        build:
+          path: "{{ project_root_remote }}"
+          dockerfile: Dockerfile
+        source: build
+        force_source: false
       when: not pt_stat.stat.exists or (force | default(false) | bool)
-      register: prep_result
-      changed_when: prep_result.rc == 0
 
-    - name: 2b. Tampilkan log proses pembersihan EKG
-      ansible.builtin.debug:
-        var: prep_result.stdout_lines
-      when: prep_result is changed and prep_result.stdout_lines is defined
+    - name: 3. Jalankan pembersihan sinyal EKG di dalam Container Docker (Ephemeral)
+      community.docker.docker_container:
+        name: "fl-prep-{{ dataset_name }}"
+        image: "{{ fl_image_name }}"
+        command: >
+          python preprocess_data.py
+          --dataset {{ dataset_name }}
+          --data_dir /data
+          --output /data/{{ dataset_name }}_preprocessed.pt
+        state: started
+        restart: false
+        cleanup: true
+        detach: false
+        volumes:
+          - "{{ data_dir }}:/data:rw"
+      when: not pt_stat.stat.exists or (force | default(false) | bool)
+      register: prep_container_run
 
-    - name: 3. Set izin kepemilikan file tensor .pt
+    - name: 4. Set izin kepemilikan file tensor .pt di host
       ansible.builtin.file:
-        path: "{{ item }}"
+        path: "{{ data_dir }}/{{ dataset_name }}_preprocessed.pt"
         owner: "{{ ansible_user }}"
         group: "{{ ansible_user }}"
         mode: "0664"
-      loop:
-        - "{{ data_dir }}/{{ dataset_name }}_preprocessed.pt"
-        - "{{ user_project_dir }}/data/{{ dataset_name }}_preprocessed.pt"
-      ignore_errors: true
-
-    - name: 4. Buat symlink file .pt ke folder data proyek pengguna
-      ansible.builtin.file:
-        src: "{{ data_dir }}/{{ dataset_name }}_preprocessed.pt"
-        dest: "{{ user_project_dir }}/data/{{ dataset_name }}_preprocessed.pt"
-        state: link
-        force: true
-        owner: "{{ ansible_user }}"
-        group: "{{ ansible_user }}"
       ignore_errors: true
 
     - name: 5. Verifikasi ukuran file tensor yang siap dimuat ke RAM

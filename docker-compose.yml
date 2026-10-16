@@ -1,0 +1,108 @@
+# ==============================================================================
+# ECG Federated Learning — seluruh sistem berjalan di Docker
+#
+# Satu host (semua klien di mesin ini):
+#   docker compose up -d --build dashboard
+#   docker compose --profile clients up -d
+#
+# Terdistribusi (VM1 = server, VM2..4 = klien):
+#   VM1:  docker compose up -d --build dashboard
+#   VM2:  SERVER_ADDRESS=10.34.100.114:8080 docker compose --profile clients up -d client-ptbxl
+#   VM3:  SERVER_ADDRESS=10.34.100.114:8080 docker compose --profile clients up -d client-chapman
+#   VM4:  SERVER_ADDRESS=10.34.100.114:8080 docker compose --profile clients up -d client-g12ec
+#
+# Data (sekali saja, per dataset):
+#   docker compose --profile tools run --rm download   --dataset ptbxl
+#   docker compose --profile tools run --rm preprocess --dataset ptbxl
+#
+# Dashboard: http://localhost:8501   | hasil permanen: ./results/runs/<strategi>-<waktu>/
+# ==============================================================================
+
+x-ecg-image: &ecg-image
+  image: ecg-fl:latest
+
+x-client: &client
+  <<: *ecg-image
+  profiles: ["clients"]
+  command: ["python", "-m", "src.client"]
+  restart: unless-stopped
+  shm_size: "2gb"
+  volumes:
+    - ${DATA_DIR_HOST:-./data}:/app/data:ro
+    - ./logs:/app/logs
+  environment: &client-env
+    SERVER_ADDRESS: ${SERVER_ADDRESS:-dashboard:8080}
+    STRATEGY: auto
+    BATCH_SIZE: ${BATCH_SIZE:-128}
+    LOCAL_EPOCHS: ${LOCAL_EPOCHS:-3}
+    LEARNING_RATE: ${LEARNING_RATE:-0.001}
+    VAL_FRACTION: ${VAL_FRACTION:-0.2}
+    SPLIT_SEED: ${SPLIT_SEED:-42}
+    TORCH_THREADS: ${TORCH_THREADS:-}
+
+services:
+  # Dashboard + Orkestrasi Flower Server (server dijalankan sebagai subprocess oleh dashboard)
+  dashboard:
+    <<: *ecg-image
+    build: .
+    container_name: fl-dashboard
+    restart: unless-stopped
+    ports:
+      - "8501:8501"   # Web UI
+      - "8080:8080"   # Flower gRPC (klien terhubung ke sini)
+    volumes:
+      - ./results:/app/results     # hasil permanen (append-only)
+      - ./logs:/app/logs
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8501
+      RESULTS_DIR: /app/results
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8501/api/strategies"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  client-ptbxl:
+    <<: *client
+    container_name: fl-client-ptbxl
+    environment:
+      <<: *client-env
+      CLIENT_ID: "1"
+      DATASET_NAME: ptbxl
+      DATA_DIR: /app/data/ptbxl
+
+  client-chapman:
+    <<: *client
+    container_name: fl-client-chapman
+    environment:
+      <<: *client-env
+      CLIENT_ID: "2"
+      DATASET_NAME: chapman
+      DATA_DIR: /app/data/chapman
+
+  client-g12ec:
+    <<: *client
+    container_name: fl-client-g12ec
+    environment:
+      <<: *client-env
+      CLIENT_ID: "3"
+      DATASET_NAME: g12ec
+      DATA_DIR: /app/data/g12ec
+
+  # ---- Tool data (profile "tools") ----
+  download:
+    <<: *ecg-image
+    profiles: ["tools"]
+    working_dir: /app
+    volumes:
+      - ./data:/app/data
+    entrypoint: ["python", "download_data.py"]
+
+  preprocess:
+    <<: *ecg-image
+    profiles: ["tools"]
+    working_dir: /app
+    volumes:
+      - ./data:/app/data
+    entrypoint: ["python", "preprocess_data.py"]

@@ -59,6 +59,16 @@ def _effective_cpu_count() -> int:
 
 
 
+class _TensorSplit:
+    """Subset tensor (signals, labels) yang kompatibel dengan FastTensorLoader."""
+    def __init__(self, signals, labels):
+        self.signals = signals
+        self.labels = labels
+
+    def __len__(self):
+        return len(self.signals)
+
+
 class FastTensorLoader:
     """Loader batch langsung dari tensor di RAM (tanpa collate/worker overhead per-sampel)."""
     def __init__(self, dataset, batch_size: int, shuffle: bool = True, drop_last: bool = False):
@@ -190,6 +200,9 @@ class ECGFlowerClient(fl.client.NumPyClient):
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
         if hasattr(self, "fedsol_opt"):
             delattr(self, "fedsol_opt")
+        self.client_c_dict = None
+        self.server_c = None
+        self.delta_c = None
 
     def _init_dataloader(self):
         from src.preprocessing.dataset import ECGDataset
@@ -216,28 +229,52 @@ class ECGFlowerClient(fl.client.NumPyClient):
         n_threads = _effective_cpu_count()
         torch.set_num_threads(n_threads)
         print(f"🧵 PyTorch threads: {n_threads} (cpu_count host={os.cpu_count()})", flush=True)
-        self.train_loader = FastTensorLoader(real_dataset, batch_size=self.batch_size, shuffle=True, drop_last=True)
-        self.eval_loader = FastTensorLoader(real_dataset, batch_size=max(self.batch_size, 128), shuffle=False)
+
+        # Split train/validasi deterministik (seed tetap -> identik antar strategi & antar run)
+        val_fraction = float(os.environ.get("VAL_FRACTION", 0.2))
+        split_seed = int(os.environ.get("SPLIT_SEED", 42))
+        n_total = len(real_dataset.signals)
+        perm = torch.randperm(n_total, generator=torch.Generator().manual_seed(split_seed))
+        n_val = max(1, int(round(n_total * val_fraction)))
+        val_idx, train_idx = perm[:n_val], perm[n_val:]
+        train_set = _TensorSplit(real_dataset.signals[train_idx].contiguous(), real_dataset.labels[train_idx].contiguous())
+        val_set = _TensorSplit(real_dataset.signals[val_idx].contiguous(), real_dataset.labels[val_idx].contiguous())
+        print(f"✂️ Split data: train={len(train_set)} | validasi={len(val_set)} (seed={split_seed})", flush=True)
+        self.train_loader = FastTensorLoader(train_set, batch_size=self.batch_size, shuffle=True, drop_last=True)
+        self.eval_loader = FastTensorLoader(val_set, batch_size=max(self.batch_size, 128), shuffle=False)
 
     def get_parameters(self, config):
         """Ambil parameter model untuk dikirim ke server"""
         if self.strategy == "fedbn":
             # FedBN: jangan kirim parameter BatchNorm1d
             return [val.cpu().numpy() for name, val in self.model.state_dict().items() if not is_batchnorm_param(name)]
+        if self.strategy == "scaffold" and getattr(self, "delta_c", None) is not None:
+            # SCAFFOLD: kirim [W_local, Delta_c_local]
+            w_arrays = [val.cpu().numpy() for _, val in self.model.state_dict().items()]
+            dc_arrays = [dc.cpu().numpy() for dc in self.delta_c]
+            return w_arrays + dc_arrays
         return [val.cpu().numpy() for _, val in self.model.state_dict().items()]
 
     def set_parameters(self, parameters):
         """Pasang parameter global dari server ke model lokal"""
         state_dict = self.model.state_dict()
         non_bn_keys = [k for k in state_dict.keys() if not is_batchnorm_param(k)]
+        num_keys = len(state_dict.keys())
         if len(parameters) == len(non_bn_keys):
             # Server mengirim parameter parsial tanpa BN (Skema FedBN)
             for k, param in zip(non_bn_keys, parameters):
                 state_dict[k] = torch.from_numpy(np.ascontiguousarray(param)).to(self.device)
         else:
-            # Server mengirim parameter lengkap (Skema FedBB / FedSOL / FedAvg)
-            for k, param in zip(state_dict.keys(), parameters):
+            # Server mengirim parameter lengkap (FedAvg / FedBB / FedSOL / FedProx / SCAFFOLD)
+            for k, param in zip(state_dict.keys(), parameters[:num_keys]):
                 state_dict[k] = torch.from_numpy(np.ascontiguousarray(param)).to(self.device)
+
+            # Jika SCAFFOLD, parameter ke-2M berisi server control variate c
+            if len(parameters) == 2 * num_keys:
+                self.server_c = [
+                    torch.from_numpy(np.ascontiguousarray(c)).to(self.device)
+                    for c in parameters[num_keys:]
+                ]
         self.model.load_state_dict(state_dict)
 
     def fit(self, parameters, config):
@@ -274,10 +311,20 @@ class ECGFlowerClient(fl.client.NumPyClient):
             self.criterion = nn.BCEWithLogitsLoss()
 
         self.set_parameters(parameters)
-        if self.strategy == "fedsol":
+        if self.strategy in ("fedsol", "fedprox", "scaffold"):
             self.global_model.load_state_dict(self.model.state_dict())
-            if not hasattr(self, "fedsol_opt"):
+            if self.strategy == "fedsol" and not hasattr(self, "fedsol_opt"):
                 self.fedsol_opt = FedSOLOptimizer(self.model, self.global_model, lr=self.lr)
+
+        # Setup SCAFFOLD control variates dictionary
+        if self.strategy == "scaffold":
+            all_keys = list(self.model.state_dict().keys())
+            if not getattr(self, "client_c_dict", None):
+                self.client_c_dict = {k: torch.zeros_like(v) for k, v in self.model.state_dict().items()}
+            if not getattr(self, "server_c", None):
+                self.server_c = [torch.zeros_like(v) for v in self.model.state_dict().values()]
+            c_s_dict = {k: c for k, c in zip(all_keys, self.server_c)}
+            c_i_dict = self.client_c_dict
 
         self.model.train()
         total_loss = 0.0
@@ -297,7 +344,24 @@ class ECGFlowerClient(fl.client.NumPyClient):
                     self.optimizer.zero_grad()
                     logits = self.model(x)
                     loss = self.criterion(logits, y)
+
+                    # Penalti proksimal untuk FedProx: (mu/2) * ||w - w^t||^2
+                    if self.strategy == "fedprox":
+                        prox_mu = float(config.get("proximal_mu", 0.01))
+                        prox_loss = torch.zeros((), device=self.device)
+                        for p, p_g in zip(self.model.parameters(), self.global_model.parameters()):
+                            prox_loss = prox_loss + torch.norm(p - p_g) ** 2
+                        loss = loss + (prox_mu / 2.0) * prox_loss
+
                     loss.backward()
+
+                    # Koreksi gradien untuk SCAFFOLD: g_i <- g_i - c_i + c
+                    if self.strategy == "scaffold":
+                        with torch.no_grad():
+                            for name, p in self.model.named_parameters():
+                                if p.grad is not None and name in c_s_dict and name in c_i_dict:
+                                    p.grad.add_(c_s_dict[name] - c_i_dict[name])
+
                     self.optimizer.step()
 
                 # Akumulasi di device (hindari sinkronisasi .item() tiap batch)
@@ -315,6 +379,31 @@ class ECGFlowerClient(fl.client.NumPyClient):
                     msg = f"   [Epoch {epoch+1}/{epochs}] Batch {batch_idx+1}/{total_batches} ({pct:.1f}%) | Batch Loss: {loss.item():.4f} (Avg: {avg_b_loss:.4f}) | Waktu: {elapsed_so_far}s"
                     self.log_history.append(msg)
                     print(msg, flush=True)
+
+        # Update control variates SCAFFOLD: Delta c_i = c_i^+ - c_i (Karimireddy et al., 2020)
+        if self.strategy == "scaffold":
+            total_steps = max(1, epochs * total_batches)
+            step_scale = 1.0 / (total_steps * self.current_lr)
+            new_c_dict = {}
+            delta_c_list = []
+            curr_sd = self.model.state_dict()
+            glob_sd = self.global_model.state_dict()
+            with torch.no_grad():
+                for name, y_i in curr_sd.items():
+                    x_0 = glob_sd[name]
+                    c_i = c_i_dict.get(name, torch.zeros_like(y_i))
+                    c_s = c_s_dict.get(name, torch.zeros_like(y_i))
+                    if y_i.is_floating_point():
+                        delta_w = x_0.to(self.device) - y_i
+                        c_i_plus = c_i - c_s + step_scale * delta_w
+                        dc = c_i_plus - c_i
+                    else:
+                        c_i_plus = c_i
+                        dc = torch.zeros_like(y_i)
+                    new_c_dict[name] = c_i_plus
+                    delta_c_list.append(dc)
+            self.client_c_dict = new_c_dict
+            self.delta_c = delta_c_list
 
         num_examples = len(self.train_loader.dataset)
         total_loss = loss_acc.item()
@@ -336,21 +425,37 @@ class ECGFlowerClient(fl.client.NumPyClient):
         return self.get_parameters(config={}), num_examples, metrics
 
     def evaluate(self, parameters, config):
+        """Evaluasi model global pada data VALIDASI lokal (tidak dipakai training).
+        Loss evaluasi selalu BCE standar agar sebanding antar strategi (FedBB melatih dengan PNB)."""
+        from src.preprocessing.dataset import DIAGNOSTIC_CLASSES_27
+        from src.metrics import multilabel_metrics
+
         self.current_status = "online"
         self.current_detail = "Evaluasi Model Global"
         self.set_parameters(parameters)
         self.model.eval()
-        total_loss = torch.zeros((), device=self.device)
+        eval_criterion = nn.BCEWithLogitsLoss(reduction="sum")
+        total_loss, n_elems = 0.0, 0
+        all_prob, all_true = [], []
         with torch.inference_mode():
             for x, y in self.eval_loader:
                 x, y = x.to(self.device), y.to(self.device)
                 logits = self.model(x)
-                total_loss += self.criterion(logits, y)
+                total_loss += eval_criterion(logits, y).item()
+                n_elems += y.numel()
+                all_prob.append(torch.sigmoid(logits).cpu())
+                all_true.append(y.cpu())
 
-        avg_loss = total_loss.item() / len(self.eval_loader)
+        avg_loss = total_loss / max(1, n_elems)
+        m = multilabel_metrics(torch.cat(all_true).numpy(), torch.cat(all_prob).numpy(), DIAGNOSTIC_CLASSES_27)
+        m.update({"val_loss": float(avg_loss), "dataset": self.dataset_name, "client_id": self.client_id})
+
+        msg = f"📊 [EVAL ronde {config.get('current_round', self.current_round)}] val_loss={avg_loss:.4f} | F1-macro={m['f1_macro']:.4f} | AUROC={m['auroc']:.4f}"
+        self.log_history.append(msg)
+        print(msg, flush=True)
         self.current_status = "online"
         self.current_detail = "Online (Standby)"
-        return float(avg_loss), len(self.train_loader.dataset), {"val_loss": float(avg_loss)}
+        return float(avg_loss), len(self.eval_loader.dataset), m
 
 
 def main():

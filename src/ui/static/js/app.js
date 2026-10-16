@@ -1,879 +1,763 @@
 /**
- * CardioPulse FL - Light Theme Experiment Control & Live Monitor
- * Manages Start/Stop commands, live metric plots, client status, and log streaming.
+ * CardioPulse FL - Dense Scientific Dashboard Logic
+ * Clean, Compact, Modular Hyperparameters & Append-Only Run History Inspector
  */
 
-// Application State
-const appState = {
+// Global State
+const state = {
   isRunning: false,
-  chartMode: 'strategy', // 'strategy' (FedBN vs FedBB vs FedSOL) atau 'client' (VM2 vs VM3 vs VM4)
-  activeMetric: 'f1',    // Default Macro-F1 untuk evaluasi performa komparatif
+  activeStrategy: 'fedbn',
+  chartMode: 'strategy', // 'strategy' (semua algoritma), 'client', atau '<strat>_vm'
+  activeMetric: 'f1',    // 'f1', 'auroc', 'loss'
   activeLogSource: 'server',
-  currentRound: 0,
-  totalRounds: 50,
-  metricsHistory: {
-    rounds: [],
-    loss: [],
-    val_loss: [],
-    f1_macro: [],
-    auroc: []
-  }
+  inspectedRun: null,    // Jika user menginspeksi run historis tertentu
+  historicalRuns: [],
+  metricsHistory: null,
+  benchmarkData: null,
+  statusTimer: null,
+  logsTimer: null,
 };
 
 let metricChart = null;
 
-// Initialize Chart.js
+// Color Palette for Algorithms
+const STRATEGY_COLORS = {
+  fedavg: { border: '#64748b', bg: 'rgba(100, 116, 139, 0.08)' },
+  fedprox: { border: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.08)' },
+  scaffold: { border: '#06b6d4', bg: 'rgba(6, 182, 212, 0.08)' },
+  fedbn: { border: '#2563eb', bg: 'rgba(37, 99, 235, 0.08)' },
+  fedbb: { border: '#10b981', bg: 'rgba(16, 185, 129, 0.08)' },
+  fedsol: { border: '#f59e0b', bg: 'rgba(245, 158, 11, 0.08)' },
+};
+
+const CLIENT_COLORS = {
+  ptbxl: { border: '#6366f1', label: 'PTB-XL (VM 2)' },
+  chapman: { border: '#f97316', label: 'Chapman (VM 3)' },
+  g12ec: { border: '#06b6d4', label: 'G12EC (VM 4)' },
+};
+
+// -------------------------------------------------------------
+// 1. MODULAR OPTIONS PANEL
+// -------------------------------------------------------------
+function renderModularOptions(strat) {
+  const titleEl = document.getElementById('modularTitle');
+  const badgeEl = document.getElementById('modularBadge');
+  const bodyEl = document.getElementById('modularBody');
+  if (!titleEl || !bodyEl) return;
+
+  strat = strat.toLowerCase();
+  state.activeStrategy = strat;
+
+  if (strat === 'fedavg') {
+    titleEl.textContent = 'Parameter Khusus: FedAvg';
+    badgeEl.textContent = 'Baseline Standard';
+    bodyEl.innerHTML = `
+      <div class="modular-desc">
+        Algoritma standar Federated Averaging tanpa regularisasi tambahan. Agregasi parameter dilakukan berbasis proporsi jumlah data latih klien (<em>n<sub>k</sub> / N</em>).
+      </div>
+    `;
+  } else if (strat === 'fedprox') {
+    titleEl.textContent = 'Parameter Khusus: FedProx';
+    badgeEl.textContent = 'Proximal Regularizer';
+    bodyEl.innerHTML = `
+      <div class="modular-row">
+        <div class="modular-field">
+          <label for="inputProximalMu">Koefisien Proksimal (&mu;):</label>
+          <input type="number" id="inputProximalMu" name="proximal_mu" step="0.001" min="0.0001" max="1.0" value="0.01">
+        </div>
+      </div>
+      <div class="modular-desc">
+        Menambahkan loss penalty <code>(&mu;/2) * ||w - w<sup>t</sup>||<sup>2</sup></code> pada pelatihan lokal klien untuk mencegah divergensi bobot saat heterogenitas data tinggi.
+      </div>
+    `;
+  } else if (strat === 'scaffold') {
+    titleEl.textContent = 'Parameter Khusus: SCAFFOLD';
+    badgeEl.textContent = 'Control Variates';
+    bodyEl.innerHTML = `
+      <div class="modular-desc">
+        Menggunakan variat kontrol lokal <code>c<sub>i</sub></code> dan server <code>c</code> untuk mengoreksi drift gradien klien: <code>g = g<sub>i</sub> - c<sub>i</sub> + c</code>. Agregasi Option 2 aktif secara otomatis.
+      </div>
+    `;
+  } else if (strat === 'fedbn') {
+    titleEl.textContent = 'Parameter Khusus: FedBN';
+    badgeEl.textContent = 'Local BatchNorm';
+    bodyEl.innerHTML = `
+      <div class="modular-desc">
+        Lapisan <code>BatchNorm1d</code> (bobot, bias, running stats) dipertahankan lokal di tiap klien dan tidak dikirimkan ke server. Mengatasi pergeseran fitur sensor (ECG lead hardware heterogeneity).
+      </div>
+    `;
+  } else if (strat === 'fedbb') {
+    titleEl.textContent = 'Parameter Khusus: FedBB';
+    badgeEl.textContent = 'PNB Loss + CBR';
+    bodyEl.innerHTML = `
+      <div class="modular-row">
+        <div class="modular-field">
+          <label for="inputFedbbAlpha">Bobot Class-Balanced Regularizer (&alpha;):</label>
+          <input type="number" id="inputFedbbAlpha" name="fedbb_alpha" step="0.05" min="0.0" max="1.0" value="0.5">
+        </div>
+      </div>
+      <div class="modular-desc">
+        Mengurangi bias representasi kelas mayoritas menggunakan Positive-Negative Balanced Binary Cross Entropy dan relaksasi classifier balancing.
+      </div>
+    `;
+  } else if (strat === 'fedsol') {
+    titleEl.textContent = 'Parameter Khusus: FedSOL';
+    badgeEl.textContent = 'Subspace Drift';
+    bodyEl.innerHTML = `
+      <div class="modular-row">
+        <div class="modular-field">
+          <label for="inputFedsolMu">Penalti Drift Ortogonal (&mu;):</label>
+          <input type="number" id="inputFedsolMu" name="fedsol_mu" step="0.001" min="0.0001" max="1.0" value="0.01">
+        </div>
+      </div>
+      <div class="modular-desc">
+        Memproyeksikan update gradien ortogonal terhadap ruang representasi model global untuk mencegah kehancuran representasi fitur laten EKG.
+      </div>
+    `;
+  }
+}
+
+// -------------------------------------------------------------
+// 2. CHART MANAGEMENT
+// -------------------------------------------------------------
 function initChart() {
   const ctx = document.getElementById('liveMetricChart');
   if (!ctx) return;
 
   metricChart = new Chart(ctx, {
     type: 'line',
-    data: {
-      labels: [],
-      datasets: [
-        {
-          label: 'Global (Agregat)',
-          data: [],
-          borderColor: '#2563eb',
-          backgroundColor: 'rgba(37, 99, 235, 0.08)',
-          borderWidth: 2.5,
-          tension: 0.3,
-          fill: true
-        },
-        {
-          label: 'PTB-XL (VM 2)',
-          data: [],
-          borderColor: '#6366f1',
-          backgroundColor: 'transparent',
-          borderWidth: 2,
-          borderDash: [3, 3],
-          tension: 0.3
-        },
-        {
-          label: 'Chapman (VM 3)',
-          data: [],
-          borderColor: '#f97316',
-          backgroundColor: 'transparent',
-          borderWidth: 2,
-          borderDash: [5, 3],
-          tension: 0.3
-        },
-        {
-          label: 'G12EC (VM 4)',
-          data: [],
-          borderColor: '#06b6d4',
-          backgroundColor: 'transparent',
-          borderWidth: 2,
-          borderDash: [6, 4],
-          tension: 0.3
-        }
-      ]
-    },
+    data: { labels: [], datasets: [] },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       animation: false,
-      animations: false,
-      transitions: {
-        active: {
-          animation: {
-            duration: 0
-          }
-        }
-      },
       plugins: {
         legend: {
           position: 'top',
-          labels: { font: { family: 'Inter', size: 11, weight: '600' }, boxWidth: 14, padding: 12 }
+          labels: { font: { family: 'Inter', size: 10, weight: '600' }, boxWidth: 12, padding: 8 }
         },
         tooltip: {
           backgroundColor: '#0f172a',
-          titleFont: { family: 'Inter' },
-          bodyFont: { family: 'JetBrains Mono' }
+          titleFont: { family: 'Inter', size: 11 },
+          bodyFont: { family: 'JetBrains Mono', size: 10 },
+          padding: 8
         }
       },
       scales: {
         x: {
-          title: { display: true, text: 'Ronde Komunikasi (Round)', color: '#64748b' },
+          title: { display: true, text: 'Ronde Komunikasi (Round)', color: '#64748b', font: { size: 10 } },
           grid: { color: '#f1f5f9' },
-          ticks: { color: '#64748b' }
+          ticks: { color: '#64748b', font: { size: 9, family: 'JetBrains Mono' } }
         },
         y: {
-          title: { display: true, text: 'BCE Loss', color: '#64748b' },
+          title: { display: true, text: 'Nilai Metrik', color: '#64748b', font: { size: 10 } },
           grid: { color: '#f1f5f9' },
-          ticks: { color: '#64748b' }
+          ticks: { color: '#64748b', font: { size: 9, family: 'JetBrains Mono' } }
         }
       }
     }
   });
 }
 
-// Switch Chart Mode: 'strategy' (FedBN vs FedBB vs FedSOL) atau 'client' (VM2 vs VM3 vs VM4)
-function switchChartMode(mode) {
-  appState.chartMode = mode;
-  document.querySelectorAll('.chart-mode-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.mode === mode);
-  });
-  renderMetricChart();
-}
-
-// Switch Metric Tab (Loss / F1 / AUROC)
-function switchMetricTab(metricName) {
-  appState.activeMetric = metricName;
-  document.querySelectorAll('.chart-tab-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.metric === metricName);
-  });
-  renderMetricChart();
-}
-
-// Render Metric Chart (Mendukung visualisasi Komparasi Global & Per-VM untuk FedBN, FedBB, FedSOL)
-function renderMetricChart() {
+function renderChart() {
   if (!metricChart) return;
 
-  const h = appState.metricsHistory || {};
-  let rounds = h.rounds || [];
-  if (rounds.length === 0 && appState.currentRound > 0) {
-    rounds = Array.from({ length: appState.currentRound }, (_, i) => i + 1);
+  // Jika sedang inspect run historis tertentu
+  if (state.inspectedRun) {
+    renderInspectedRunChart();
+    return;
   }
 
-  const metricName = appState.activeMetric || 'f1';
-  const mode = appState.chartMode || 'strategy';
+  const h = state.metricsHistory || {};
+  let rounds = h.rounds || [];
+  Object.values(h.strategies || {}).forEach(s => {
+    if (s && Array.isArray(s.rounds) && s.rounds.length > rounds.length) rounds = s.rounds;
+  });
 
   metricChart.data.labels = rounds;
+  const metric = state.activeMetric; // 'f1', 'auroc', 'loss'
+  const mode = state.chartMode;
 
-  let yAxisTitle = 'BCE Loss';
-  if (metricName === 'f1') yAxisTitle = 'Macro-F1 Score (0.0 - 1.0)';
-  if (metricName === 'auroc') yAxisTitle = 'Macro-AUROC (0.5 - 1.0)';
-
-  const subtitleEl = document.getElementById('metricPlotSubtitle');
+  let yTitle = 'Macro-F1 (0.0 - 1.0)';
+  if (metric === 'auroc') yTitle = 'AUROC (0.5 - 1.0)';
+  if (metric === 'loss') yTitle = 'BCE Validation Loss';
+  metricChart.options.scales.y.title.text = yTitle;
 
   if (mode === 'strategy') {
-    // Mode 1: Komparasi Global Antar-Strategi (FEDBN vs FEDBB vs FEDSOL)
-    if (subtitleEl) subtitleEl.textContent = 'Perbandingan Model Global: FedBN vs FedBB vs FedSOL';
+    // Tampilkan perbandingan global semua strategi
+    const datasets = [];
+    const metricKey = (metric === 'f1') ? 'f1_macro' : (metric === 'loss' ? 'val_loss' : 'auroc');
 
-    const getStratSeries = (stratKey, metric) => {
-      const metricKey = (metric === 'f1') ? 'f1_macro' : metric;
-      if (h.strategies && h.strategies[stratKey] && Array.isArray(h.strategies[stratKey][metricKey]) && h.strategies[stratKey][metricKey].length > 0) {
-        return h.strategies[stratKey][metricKey];
+    for (const [sKey, color] of Object.entries(STRATEGY_COLORS)) {
+      const sData = (h.strategies && h.strategies[sKey]) ? h.strategies[sKey][metricKey] || [] : [];
+      if (sData.length > 0) {
+        datasets.push({
+          label: sKey.toUpperCase(),
+          data: sData,
+          borderColor: color.border,
+          backgroundColor: color.bg,
+          borderWidth: 2,
+          tension: 0.15,
+          fill: false,
+          pointRadius: 2.5
+        });
       }
-      if (stratKey === 'fedbn' && Array.isArray(h[metricKey]) && h[metricKey].length > 0) {
-        return h[metricKey];
-      }
-      // Strategi belum dijalankan: jangan gambar plot palsu
-      return [];
-    };
-
-    metricChart.data.datasets = [
-      {
-        label: 'FedBB (PNB Loss + CBR)',
-        data: getStratSeries('fedbb', metricName),
-        borderColor: '#d97706',
-        backgroundColor: 'rgba(217, 119, 6, 0.08)',
-        borderWidth: 2.8,
-        tension: 0.1,
-        fill: true,
-        pointRadius: 3
-      },
-      {
-        label: 'FedSOL (Orthogonal Subspace)',
-        data: getStratSeries('fedsol', metricName),
-        borderColor: '#0d9488',
-        backgroundColor: 'rgba(13, 148, 136, 0.08)',
-        borderWidth: 2.8,
-        tension: 0.1,
-        fill: false,
-        pointRadius: 3
-      },
-      {
-        label: 'FedBN (Local BatchNorm)',
-        data: getStratSeries('fedbn', metricName),
-        borderColor: '#2563eb',
-        backgroundColor: 'rgba(37, 99, 235, 0.08)',
-        borderWidth: 2.8,
-        tension: 0.1,
-        fill: false,
-        pointRadius: 3
-      }
-    ];
-
-  } else {
-    // Mode 2: Per-VM Node (FedBN, FedBB, atau FedSOL)
-    let stratKey = 'fedbn';
-    if (mode === 'fedbb_vm') stratKey = 'fedbb';
-    else if (mode === 'fedsol_vm') stratKey = 'fedsol';
-    else if (mode === 'fedbn_vm' || mode === 'client') stratKey = 'fedbn';
-
-    const stratMeta = {
-      fedbn: { name: 'FedBN', color: '#2563eb', bg: 'rgba(37, 99, 235, 0.08)', sub: 'Evaluasi Per-VM: FedBN (Local BatchNorm • Isolasi Feature Shift)' },
-      fedbb: { name: 'FedBB', color: '#d97706', bg: 'rgba(217, 119, 6, 0.08)', sub: 'Evaluasi Per-VM: FedBB (PNB Loss + CBR • Mitigasi Label Skew)' },
-      fedsol: { name: 'FedSOL', color: '#0d9488', bg: 'rgba(13, 148, 136, 0.08)', sub: 'Evaluasi Per-VM: FedSOL (Orthogonal Subspace • Mitigasi Client Drift)' }
-    }[stratKey];
-
-    const hasData = (h.strategies && h.strategies[stratKey]) || (stratKey === 'fedbn' && h.loss && h.loss.length > 0);
-    if (!hasData) {
-      if (subtitleEl) subtitleEl.textContent = `${stratMeta.sub} • (Belum Dijalankan)`;
-    } else {
-      if (subtitleEl) subtitleEl.textContent = stratMeta.sub;
     }
+    metricChart.data.datasets = datasets;
+  } else if (mode.endsWith('_vm')) {
+    // Mode per-VM untuk strategi tertentu (misal: fedbn_vm)
+    const stratKey = mode.replace('_vm', '');
+    const metricKey = (metric === 'f1') ? 'f1_macro' : (metric === 'loss' ? 'val_loss' : 'auroc');
+    const stratData = (h.strategies && h.strategies[stratKey]) ? h.strategies[stratKey] : null;
 
-    const getPerVmSeries = (nodeKey) => {
-      const metricKey = (metricName === 'f1') ? 'f1_macro' : metricName;
-      // 1. Cek dari response server live
-      if (h.strategies && h.strategies[stratKey] && h.strategies[stratKey][nodeKey] && Array.isArray(h.strategies[stratKey][nodeKey][metricKey]) && h.strategies[stratKey][nodeKey][metricKey].length > 0) {
-        return h.strategies[stratKey][nodeKey][metricKey];
-      }
-      if (nodeKey === 'global' && h.strategies && h.strategies[stratKey] && Array.isArray(h.strategies[stratKey][metricKey]) && h.strategies[stratKey][metricKey].length > 0) {
-        return h.strategies[stratKey][metricKey];
-      }
-      if (stratKey === 'fedbn' && nodeKey !== 'global' && h[nodeKey] && Array.isArray(h[nodeKey][metricKey]) && h[nodeKey][metricKey].length > 0) {
-        return h[nodeKey][metricKey];
-      }
-      if (stratKey === 'fedbn' && nodeKey === 'global' && Array.isArray(h[metricKey]) && h[metricKey].length > 0) {
-        return h[metricKey];
-      }
-
-      // Strategi belum dijalankan: jangan buat kurva tiruan
-      return [];
-    };
-
-    metricChart.data.datasets = [
-      {
-        label: `Global ${stratMeta.name} (Agregat)`,
-        data: getPerVmSeries('global'),
-        borderColor: stratMeta.color,
-        backgroundColor: stratMeta.bg,
-        borderWidth: 2.8,
-        tension: 0.1,
-        fill: true,
+    const datasets = [];
+    if (stratData) {
+      // Global
+      datasets.push({
+        label: `${stratKey.toUpperCase()} (Global)`,
+        data: stratData[metricKey] || [],
+        borderColor: '#0f172a',
+        borderWidth: 2.5,
+        tension: 0.15,
         pointRadius: 3
-      },
-      {
-        label: `PTB-XL (VM 2) [${stratMeta.name}]`,
-        data: getPerVmSeries('ptbxl'),
-        borderColor: '#6366f1',
-        backgroundColor: 'transparent',
-        borderWidth: 2,
-        borderDash: [3, 3],
-        tension: 0.1,
-        pointRadius: 2.5
-      },
-      {
-        label: `Chapman (VM 3) [${stratMeta.name}]`,
-        data: getPerVmSeries('chapman'),
-        borderColor: '#f97316',
-        backgroundColor: 'transparent',
-        borderWidth: 2,
-        borderDash: [5, 3],
-        tension: 0.1,
-        pointRadius: 2.5
-      },
-      {
-        label: `G12EC (VM 4) [${stratMeta.name}]`,
-        data: getPerVmSeries('g12ec'),
-        borderColor: '#06b6d4',
-        backgroundColor: 'transparent',
-        borderWidth: 2,
-        borderDash: [6, 4],
-        tension: 0.1,
-        pointRadius: 2.5
-      }
-    ];
-  }
-
-  metricChart.options.scales.y.title.text = yAxisTitle;
-  metricChart.update('none');
-}
-
-// UI Event Handlers
-function setupEventListeners() {
-  // Chart View Mode Switcher (FedBN vs FedBB vs FedSOL or Per-Client)
-  document.querySelectorAll('.chart-mode-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      switchChartMode(e.currentTarget.dataset.mode);
-    });
-  });
-
-  // Chart Metric Tabs (F1 / AUROC / Loss)
-  document.querySelectorAll('.chart-tab-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      switchMetricTab(e.currentTarget.dataset.metric);
-    });
-  });
-
-  // Strategy Radio & Custom Sequence Box Toggling
-  const seqBox = document.getElementById('customSequenceBox');
-  const seqPreview = document.getElementById('sequencePreviewText');
-  const seqFirst = document.getElementById('seqFirst');
-  const seqSecond = document.getElementById('seqSecond');
-  const seqThird = document.getElementById('seqThird');
-
-  function updateSequencePreview() {
-    if (!seqFirst || !seqSecond || !seqThird || !seqPreview) return;
-    const list = [seqFirst.value];
-    if (seqSecond.value !== 'none' && !list.includes(seqSecond.value)) list.push(seqSecond.value);
-    if (seqThird.value !== 'none' && !list.includes(seqThird.value)) list.push(seqThird.value);
-    
-    const formatted = list.map(s => `<strong>${s.toUpperCase()}</strong>`).join(' ➔ ');
-    seqPreview.innerHTML = `Urutan eksekusi: ${formatted}`;
-    
-    const desc = document.getElementById('strategyCardCustomDesc');
-    if (desc) desc.textContent = list.map(s => s.toUpperCase()).join(' ➔ ');
-  }
-
-  document.querySelectorAll('input[name="strategy"]').forEach(radio => {
-    radio.addEventListener('change', (e) => {
-      if (seqBox) {
-        seqBox.style.display = (e.target.value === 'custom') ? 'block' : 'none';
-      }
-      if (e.target.value === 'custom') {
-        updateSequencePreview();
-      }
-    });
-  });
-
-  if (seqFirst && seqSecond && seqThird) {
-    [seqFirst, seqSecond, seqThird].forEach(sel => {
-      sel.addEventListener('change', updateSequencePreview);
-    });
-  }
-
-  // Start Training Button
-  const btnStart = document.getElementById('btnStartTraining');
-  btnStart.addEventListener('click', async () => {
-    const form = document.getElementById('formExperimentControl');
-    const formData = new FormData(form);
-
-    let selectedStrategy = formData.get('strategy');
-    if (selectedStrategy === 'custom') {
-      const list = [seqFirst.value];
-      if (seqSecond.value !== 'none' && !list.includes(seqSecond.value)) list.push(seqSecond.value);
-      if (seqThird.value !== 'none' && !list.includes(seqThird.value)) list.push(seqThird.value);
-      selectedStrategy = list.join(',');
-    }
-
-    const payload = {
-      strategy: selectedStrategy,
-      model_arch: formData.get('model_arch'),
-      num_rounds: parseInt(formData.get('num_rounds')),
-      local_epochs: parseInt(formData.get('local_epochs')),
-      learning_rate: parseFloat(formData.get('learning_rate')),
-      batch_size: parseInt(formData.get('batch_size'))
-    };
-
-    btnStart.disabled = true;
-    btnStart.textContent = 'Memulai Server...';
-
-    try {
-      const res = await fetch('/api/experiment/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
       });
-      const data = await res.json();
-      if (res.ok) {
-        setServerRunningState(true);
-        appState.totalRounds = payload.num_rounds;
-      } else {
-        alert(`Gagal memulai: ${data.message || 'Error server'}`);
-        btnStart.disabled = false;
-        btnStart.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg> Start Training`;
-      }
-    } catch (err) {
-      alert(`Koneksi error: ${err.message}`);
-      btnStart.disabled = false;
-      btnStart.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg> Start Training`;
-    }
-  });
-
-  // Stop Training Button
-  const btnStop = document.getElementById('btnStopTraining');
-  btnStop.addEventListener('click', async () => {
-    if (!confirm('Apakah Anda yakin ingin menghentikan sesi pelatihan yang sedang berjalan?')) return;
-
-    btnStop.disabled = true;
-    btnStop.textContent = 'Menghentikan...';
-
-    try {
-      await fetch('/api/experiment/stop', { method: 'POST' });
-      setServerRunningState(false);
-    } catch (err) {
-      alert(`Error menghentikan: ${err.message}`);
-    }
-  });
-
-  // Reset Button
-  const btnReset = document.getElementById('btnResetExperiment');
-  btnReset.addEventListener('click', async () => {
-    if (appState.isRunning) {
-      const confirmReset = confirm('Pelatihan sedang berjalan. Apakah Anda yakin ingin menghentikan dan mereset seluruh sesi & UI?');
-      if (!confirmReset) return;
-    }
-
-    btnReset.disabled = true;
-    btnReset.textContent = 'Mereset...';
-
-    try {
-      await fetch('/api/experiment/reset', { method: 'POST' });
-    } catch (e) {
-      console.warn('Reset request error:', e);
-    }
-
-    // 1. Reset State
-    setServerRunningState(false);
-    appState.currentRound = 0;
-    appState.metricsHistory = {
-      rounds: [],
-      loss: [],
-      val_loss: [],
-      f1_macro: [],
-      auroc: [],
-      ptbxl: { loss: [], f1_macro: [], auroc: [] },
-      chapman: { loss: [], f1_macro: [], auroc: [] },
-      g12ec: { loss: [], f1_macro: [], auroc: [] }
-    };
-
-    // 2. Reset Chart Visuals
-    if (metricChart) {
-      metricChart.data.labels = [];
-      metricChart.data.datasets.forEach(ds => {
-        ds.data = [];
-      });
-      metricChart.update();
-    }
-
-    // 3. Reset Progress Bar
-    updateProgressBar(0, appState.totalRounds);
-    const roundText = document.getElementById('progressRoundText');
-    const percentText = document.getElementById('progressPercentText');
-    const barFill = document.getElementById('progressBarFill');
-    if (roundText) roundText.textContent = 'Ronde Federasi: Menunggu Memulai...';
-    if (percentText) percentText.textContent = '0%';
-    if (barFill) barFill.style.width = '0%';
-
-    // 4. Reset Live ETA & Speed Text
-    const etaEl = document.getElementById('progressEtaText');
-    const speedEl = document.getElementById('progressSpeedText');
-    if (etaEl) etaEl.textContent = 'Siap dimulai';
-    if (speedEl) speedEl.textContent = 'Laju: --';
-
-    // 5. Reset Timing pada Tiap Kartu Node Klien
-    ['timingVm2', 'timingVm3', 'timingVm4'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) {
-        el.textContent = 'Menunggu Ronde 1...';
-        el.style.color = '#64748b';
-      }
-    });
-
-    // 6. Reset Log Box & Button Text
-    const logBox = document.getElementById('logStreamBox');
-    if (logBox) logBox.textContent = 'Sesi telah di-reset bersih. Siap memulai eksperimen baru.';
-
-    btnReset.disabled = false;
-    btnReset.textContent = 'Reset';
-  });
-
-  // Download Model Checkpoint
-  const btnDownload = document.getElementById('btnDownloadModel');
-  btnDownload.addEventListener('click', () => {
-    window.location.href = '/api/download-model';
-  });
-
-  // Log Source Tabs (Server vs VM2 vs VM3 vs VM4 vs Semua)
-  const logTabs = document.querySelectorAll('.log-tab-btn');
-  logTabs.forEach(btn => {
-    btn.addEventListener('click', () => {
-      logTabs.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      appState.activeLogSource = btn.dataset.source;
-      const box = document.getElementById('logStreamBox');
-      if (box) box.textContent = `Memuat log dari [${btn.textContent}]...`;
-      pollLogs();
-    });
-  });
-}
-
-function setServerRunningState(isRunning) {
-  appState.isRunning = isRunning;
-  const btnStart = document.getElementById('btnStartTraining');
-  const btnStop = document.getElementById('btnStopTraining');
-  const statusDot = document.getElementById('serverStatusDot');
-  const statusText = document.getElementById('serverStatusText');
-
-  if (isRunning) {
-    btnStart.disabled = true;
-    btnStart.textContent = 'Training Berjalan...';
-    btnStop.disabled = false;
-    btnStop.textContent = 'Stop / Abort';
-    statusDot.className = 'dot running';
-    statusText.textContent = 'Server: Training Active';
-  } else {
-    btnStart.disabled = false;
-    btnStart.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg> Start Training`;
-    btnStop.disabled = true;
-    btnStop.textContent = 'Stop / Abort';
-    statusDot.className = 'dot idle';
-    statusText.textContent = 'Server: Idle';
-  }
-}
-
-function updateClientStatuses(clients, connectedCount, totalClients) {
-  const summaryEl = document.getElementById('clientsConnectedSummary');
-  if (summaryEl) {
-    summaryEl.textContent = `${connectedCount} / ${totalClients} Klien Terhubung`;
-    if (connectedCount === totalClients) {
-      summaryEl.className = 'badge-status online';
-    } else if (connectedCount > 0) {
-      summaryEl.className = 'badge-status idle';
-    } else {
-      summaryEl.className = 'badge-status offline';
-    }
-  }
-
-  const clientMap = {
-    'vm2': { badge: 'badgeVm2', card: 'clientNodeVm2', timing: 'timingVm2' },
-    'vm3': { badge: 'badgeVm3', card: 'clientNodeVm3', timing: 'timingVm3' },
-    'vm4': { badge: 'badgeVm4', card: 'clientNodeVm4', timing: 'timingVm4' }
-  };
-
-  for (const [key, els] of Object.entries(clientMap)) {
-    const badge = document.getElementById(els.badge);
-    const card = document.getElementById(els.card);
-    const timing = document.getElementById(els.timing);
-    const client = clients ? clients[key] : null;
-
-    if (!client || client.status === 'offline') {
-      if (badge) {
-        badge.className = 'badge-status offline';
-        badge.textContent = 'Offline';
-      }
-      if (card) {
-        card.classList.add('is-offline');
-        card.classList.remove('is-training');
-      }
-      if (timing) {
-        timing.textContent = 'Offline';
-        timing.style.color = '#94a3b8';
-      }
-    } else if (client.status === 'training' && appState.isRunning) {
-      if (badge) {
-        badge.className = 'badge-status training';
-        badge.textContent = client.status_label || 'Training';
-      }
-      if (card) {
-        card.classList.remove('is-offline');
-        card.classList.add('is-training');
-      }
-      if (timing) {
-        const elapsed = Math.round(client.elapsed_in_round || 0);
-        timing.innerHTML = `<span style="color:#2563eb;font-weight:600;">Sedang berjalan: ${elapsed}s...</span>`;
-      }
-    } else {
-      if (badge) {
-        badge.className = 'badge-status online';
-        badge.textContent = appState.isRunning ? (client.status_label || 'Online') : 'Online (Standby)';
-      }
-      if (card) {
-        card.classList.remove('is-offline');
-        card.classList.remove('is-training');
-      }
-      if (timing) {
-        if (appState.isRunning && client.measured_duration && client.measured_duration > 0) {
-          const s = Math.round(client.measured_duration);
-          const m = (client.measured_duration / 60).toFixed(1);
-          timing.innerHTML = `Terukur: <span style="color:#059669;font-weight:700;">${s}s</span> (${m} mnt/ronde)`;
-        } else {
-          timing.textContent = 'Menunggu Ronde 1...';
-          timing.style.color = '#64748b';
+      // Per client
+      for (const [dsKey, cInfo] of Object.entries(CLIENT_COLORS)) {
+        if (stratData[dsKey] && Array.isArray(stratData[dsKey][metricKey])) {
+          datasets.push({
+            label: cInfo.label,
+            data: stratData[dsKey][metricKey],
+            borderColor: cInfo.border,
+            borderDash: [4, 3],
+            borderWidth: 1.8,
+            tension: 0.15,
+            pointRadius: 2
+          });
         }
       }
     }
+    metricChart.data.datasets = datasets;
   }
+
+  metricChart.update();
 }
 
-function updateProgressBar(current, total) {
-  const percent = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
-  const fill = document.getElementById('progressBarFill');
-  const txtRound = document.getElementById('progressRoundText');
-  const txtPercent = document.getElementById('progressPercentText');
+function renderInspectedRunChart() {
+  const run = state.inspectedRun;
+  if (!run || !run.rounds) return;
 
-  if (fill) fill.style.width = `${percent}%`;
-  if (txtPercent) txtPercent.textContent = `${percent}%`;
-  if (txtRound) {
-    txtRound.textContent = current > 0 
-      ? `Ronde Federasi: ${current} dari ${total}` 
-      : 'Ronde Federasi: Menunggu Memulai...';
+  const validRounds = run.rounds.filter(r => r.global);
+  const rounds = validRounds.map(r => r.round);
+  metricChart.data.labels = rounds;
+
+  const metric = state.activeMetric;
+  const metricKey = (metric === 'f1') ? 'f1_macro' : (metric === 'loss' ? 'val_loss' : 'auroc');
+
+  let yTitle = 'Macro-F1 (0.0 - 1.0)';
+  if (metric === 'auroc') yTitle = 'AUROC (0.5 - 1.0)';
+  if (metric === 'loss') yTitle = 'BCE Validation Loss';
+  metricChart.options.scales.y.title.text = yTitle;
+
+  const strat = (run.strategy || 'fedavg').toLowerCase();
+  const color = STRATEGY_COLORS[strat] || { border: '#2563eb', bg: 'rgba(37, 99, 235, 0.08)' };
+
+  const globalSeries = validRounds.map(r => r.global ? r.global[metricKey] : null);
+
+  const datasets = [
+    {
+      label: `${run.run_id} (Global)`,
+      data: globalSeries,
+      borderColor: color.border,
+      backgroundColor: color.bg,
+      borderWidth: 2.5,
+      tension: 0.15,
+      pointRadius: 3
+    }
+  ];
+
+  // Per client curves jika ada
+  for (const [dsKey, cInfo] of Object.entries(CLIENT_COLORS)) {
+    const clientSeries = validRounds.map(r => {
+      const c = r.clients && r.clients[dsKey];
+      return c ? c[metricKey] : null;
+    });
+    if (clientSeries.some(v => v !== null)) {
+      datasets.push({
+        label: cInfo.label,
+        data: clientSeries,
+        borderColor: cInfo.border,
+        borderDash: [4, 3],
+        borderWidth: 1.5,
+        tension: 0.15,
+        pointRadius: 2
+      });
+    }
   }
+
+  metricChart.data.datasets = datasets;
+  metricChart.update();
 }
 
-// Update Live Telemetry Ribbon (Batch, Epoch, Round, LR) di Atas Plot
-function updateNodeTelemetryRibbon(clients, totalRounds) {
-  const vms = ['vm2', 'vm3', 'vm4'];
-  vms.forEach(vmKey => {
-    const client = clients ? clients[vmKey] : null;
-    const dot = document.getElementById(`chip-${vmKey}-dot`);
-    const statusEl = document.getElementById(`chip-${vmKey}-status`);
-    const roundEl = document.getElementById(`chip-${vmKey}-round`);
-    const epochEl = document.getElementById(`chip-${vmKey}-epoch`);
-    const batchEl = document.getElementById(`chip-${vmKey}-batch`);
-    const lrEl = document.getElementById(`chip-${vmKey}-lr`);
-    const chip = document.getElementById(`chip-${vmKey}`);
-
-    if (!client || client.status === 'offline') {
-      if (dot) dot.className = 'chip-dot offline';
-      if (statusEl) { statusEl.className = 'chip-status-badge'; statusEl.textContent = 'Offline'; }
-      if (chip) chip.classList.remove('active-training');
-      if (roundEl) roundEl.textContent = `R0/${totalRounds || 50}`;
-      if (epochEl) epochEl.textContent = '0/3';
-      if (batchEl) batchEl.textContent = '0/0';
-      if (lrEl) lrEl.textContent = '0.001';
-      return;
-    }
-
-    const isTraining = (client.status === 'training');
-    if (dot) dot.className = isTraining ? 'chip-dot training' : 'chip-dot online';
-    if (statusEl) {
-      statusEl.className = isTraining ? 'chip-status-badge training' : 'chip-status-badge online';
-      statusEl.textContent = isTraining ? 'Training' : 'Online (Standby)';
-    }
-    if (chip) chip.classList.toggle('active-training', isTraining);
-
-    const cRound = client.current_round || 0;
-    const cEpoch = client.epoch || 0;
-    const totEpoch = client.total_epochs || 3;
-    const cBatch = client.batch || 0;
-    const totBatch = client.total_batches || 0;
-    const cLr = client.learning_rate || 0.001;
-
-    if (roundEl) roundEl.textContent = `R${cRound}/${totalRounds || 50}`;
-    if (epochEl) epochEl.textContent = `${cEpoch}/${totEpoch}`;
-    if (batchEl) batchEl.textContent = totBatch > 0 ? `${cBatch}/${totBatch}` : `${cBatch}`;
-    if (lrEl) lrEl.textContent = `${cLr}`;
-  });
-}
-
-// Polling Status & Metrics from Backend
-async function pollBackend() {
+// -------------------------------------------------------------
+// 3. HISTORICAL RUNS TABLE & ACTIONS (ZERO OVERWRITE)
+// -------------------------------------------------------------
+async function fetchHistoricalRuns() {
   try {
-    const res = await fetch('/api/status');
-    if (res.ok) {
-      const data = await res.json();
-      const isServerActive = (data.status === 'running' || data.status === 'training');
-      
-      if (isServerActive !== appState.isRunning) {
-        setServerRunningState(isServerActive);
-      }
+    const res = await fetch('/api/runs');
+    if (!res.ok) return;
+    const data = await res.json();
+    state.historicalRuns = data.runs || [];
+    renderHistoricalRunsTable();
 
-      // Update real status of each client
-      if (data.clients) {
-        updateClientStatuses(data.clients, data.connected_count || 0, data.total_clients || 3);
-        updateNodeTelemetryRibbon(data.clients, data.total_rounds || appState.totalRounds);
-      }
-
-      if (data.current_round !== undefined) {
-        appState.currentRound = data.current_round;
-        appState.totalRounds = data.total_rounds || appState.totalRounds;
-        updateProgressBar(appState.currentRound, appState.totalRounds);
-      }
-
-      // Update Benchmark Comparison Table
-      if (data.benchmark) {
-        renderBenchmarkTable(data.benchmark, data.strategy || 'fedbn');
-      }
-
-      // Update Live ETA & Speed
-      const etaEl = document.getElementById('progressEtaText');
-      const speedEl = document.getElementById('progressSpeedText');
-      if (etaEl && data.eta_formatted) {
-        etaEl.textContent = data.eta_formatted;
-      }
-      if (speedEl && data.speed_formatted) {
-        speedEl.textContent = `Laju: ${data.speed_formatted}`;
-      }
-
-      // Update metrics if available
-      if (data.metrics && data.metrics.rounds && data.metrics.rounds.length > 0) {
-        const prevRoundsCount = (appState.metricsHistory && appState.metricsHistory.rounds) ? appState.metricsHistory.rounds.length : 0;
-        const newRoundsCount = data.metrics.rounds.length;
-        const stratChanged = (data.strategy || 'fedbn') !== (appState.activeStrategy || 'fedbn');
-
-        appState.metricsHistory = data.metrics;
-        appState.activeStrategy = data.strategy || 'fedbn';
-
-        // Hanya update chart jika ada ronde baru atau strategi berganti (mencegah animasi naik-turun tiap detik)
-        if (newRoundsCount !== prevRoundsCount || stratChanged) {
-          renderMetricChart();
-        }
-      }
+    // Update storage summary di header
+    const summaryEl = document.getElementById('storageSummaryText');
+    if (summaryEl) {
+      summaryEl.textContent = `Storage: ${state.historicalRuns.length} Runs (Append-Only)`;
     }
   } catch (err) {
-    // Offline or server temporarily busy
+    console.error('Error fetching historical runs:', err);
   }
 }
 
-// Render Benchmark Comparison Table (FedBN vs FedBB vs FedSOL)
-function renderBenchmarkTable(benchmark, activeStrategy) {
-  const tbody = document.getElementById('benchmarkTableBody');
-  const badge = document.getElementById('benchmarkActiveBadge');
-  if (!tbody || !benchmark) return;
+function renderHistoricalRunsTable() {
+  const tbody = document.getElementById('historyTableBody');
+  if (!tbody) return;
 
-  if (badge) {
-    badge.textContent = `Aktif: ${(activeStrategy || 'FEDBN').toUpperCase()}`;
+  const filterStrat = (document.getElementById('filterHistoryStrategy')?.value || 'all').toLowerCase();
+  let runs = state.historicalRuns;
+
+  if (filterStrat !== 'all') {
+    runs = runs.filter(r => (r.strategy || '').toLowerCase() === filterStrat);
   }
 
-  const stratKeys = ['fedbn', 'fedbb', 'fedsol'];
-  
-  // Hitung best score untuk highlight visual
-  let maxF1 = 0;
-  let maxAuroc = 0;
-  stratKeys.forEach(k => {
-    if (benchmark[k] && benchmark[k].macro_f1 !== null && benchmark[k].status === 'completed') {
-      if (benchmark[k].macro_f1 > maxF1) maxF1 = benchmark[k].macro_f1;
-      if (benchmark[k].auroc > maxAuroc) maxAuroc = benchmark[k].auroc;
-    }
-  });
-
-  let html = '';
-  stratKeys.forEach(key => {
-    const item = benchmark[key];
-    if (!item) return;
-
-    const isActive = (key.toLowerCase() === (activeStrategy || '').toLowerCase());
-    const hasData = (item.macro_f1 !== null && item.macro_f1 !== undefined && item.status !== 'pending');
-    
-    const isTopF1 = hasData && (item.macro_f1 >= maxF1 && maxF1 > 0);
-    const isTopAuroc = hasData && (item.auroc >= maxAuroc && maxAuroc > 0);
-
-    let statusBadge = '<span class="badge-status idle">Belum Dijalankan</span>';
-    if (item.status === 'running') {
-      statusBadge = '<span class="badge-status training" style="animation: pulse 1.5s infinite;">Pelatihan (R' + (item.rounds_done || 1) + ')</span>';
-    } else if (item.status === 'completed') {
-      statusBadge = '<span class="badge-status online">Selesai Evaluasi</span>';
-    }
-
-    const f1Str = hasData ? Number(item.macro_f1).toFixed(3) : '--';
-    const aurocStr = hasData ? Number(item.auroc).toFixed(3) : '--';
-    const lossStr = (hasData && item.final_loss !== null && item.final_loss !== undefined) ? Number(item.final_loss).toFixed(4) : '--';
-    const speedStr = (item.speed_sec !== null && item.speed_sec !== undefined) ? item.speed_sec + 's' : '--';
-
-    const f1Percent = hasData ? Math.min(100, Math.round(item.macro_f1 * 100)) : 0;
-    const aurocPercent = hasData ? Math.min(100, Math.round(item.auroc * 100)) : 0;
-
-    html += `
-      <tr class="${isActive ? 'active-strat-row' : ''}">
-        <td>
-          <div class="strat-badge-cell">
-            <span class="strat-pill ${key}">${item.name}</span>
-            <div style="font-size: 0.72rem; color: var(--text-muted);">${item.full_name || ''}</div>
-          </div>
-        </td>
-        <td style="max-width: 200px;">
-          <div style="font-weight: 500;">${item.mechanism}</div>
-          <span class="benchmark-subtext">${item.note || ''}</span>
-        </td>
-        <td style="max-width: 190px;">
-          <span style="color: var(--text-main); font-weight: 500;">${item.target}</span>
-        </td>
-        <td>
-          <div class="score-cell ${isTopF1 ? 'highlight-top' : ''}">
-            ${f1Str}
-            ${hasData ? `<span class="score-micro-bar"><span class="score-micro-fill ${isTopF1 ? 'green' : ''}" style="width: ${f1Percent}%;"></span></span>` : ''}
-          </div>
-        </td>
-        <td>
-          <div class="score-cell ${isTopAuroc ? 'highlight-top' : ''}">
-            ${aurocStr}
-            ${hasData ? `<span class="score-micro-bar"><span class="score-micro-fill ${isTopAuroc ? 'amber' : ''}" style="width: ${aurocPercent}%;"></span></span>` : ''}
-          </div>
-        </td>
-        <td>
-          <span class="score-cell" style="color: var(--text-sub);">${lossStr}</span>
-        </td>
-        <td>
-          <span style="font-family: var(--font-mono); font-size: 0.78rem; font-weight: 600;">
-            ${speedStr}
-          </span>
-        </td>
-        <td>${statusBadge}</td>
-        <td>
-          <button type="button" 
-                  class="btn-select-strat ${isActive ? 'active-strat' : ''}" 
-                  onclick="selectStrategyDirectly('${key}')">
-            ${isActive ? '✓ Terpilih' : 'Pilih'}
-          </button>
+  if (runs.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="9" class="text-center text-muted" style="padding: 1.25rem;">
+          Belum ada riwayat eksperimen untuk kategori ini.
         </td>
       </tr>
     `;
-  });
+    return;
+  }
 
-  tbody.innerHTML = html;
+  tbody.innerHTML = runs.map(r => {
+    const strat = (r.strategy || 'unknown').toUpperCase();
+    const status = (r.status || 'unknown').toLowerCase();
+    const started = r.started_at ? new Date(r.started_at * 1000).toLocaleString('id-ID', {
+      month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit'
+    }) : '-';
+    
+    const roundsDone = r.rounds_done ?? 0;
+    const totalRounds = r.config?.num_rounds ?? 50;
+
+    const f1Str = (r.best_f1 != null) ? Number(r.best_f1).toFixed(4) : '-';
+    const lossStr = (r.final_loss != null) ? Number(r.final_loss).toFixed(4) : '-';
+    const aurocStr = (r.final_auroc != null) ? Number(r.final_auroc).toFixed(4) : '-';
+
+    const isInspecting = state.inspectedRun && state.inspectedRun.run_id === r.run_id;
+
+    return `
+      <tr style="${isInspecting ? 'background: #eff6ff;' : ''}">
+        <td class="mono" style="font-weight: 600;">${r.run_id}</td>
+        <td>${started}</td>
+        <td><span class="mono" style="font-weight: 700; color: #1e293b;">${strat}</span></td>
+        <td class="mono">${roundsDone} / ${totalRounds}</td>
+        <td><span class="badge-status ${status}">${status}</span></td>
+        <td class="f1-highlight">${f1Str}</td>
+        <td class="mono">${lossStr}</td>
+        <td class="mono">${aurocStr}</td>
+        <td>
+          <div style="display: flex; gap: 0.3rem;">
+            <button class="table-btn primary" onclick="inspectHistoricalRun('${r.run_id}')" title="Visualisasikan run ini ke grafik">
+              Grafik
+            </button>
+            ${r.has_best_model ? `
+              <a class="table-btn" href="/api/download-model?run=${r.run_id}&tag=best" download title="Unduh bobot PyTorch terbaik">
+                best.pt
+              </a>
+            ` : ''}
+            <a class="table-btn" href="/api/download-metrics?run=${r.run_id}" download title="Unduh metrics JSON lengkap">
+              JSON
+            </a>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
 }
 
-// Quick selector from table row to radio button in Experiment Control Panel
-window.selectStrategyDirectly = function(strategyKey) {
-  const radio = document.querySelector(`input[name="strategy"][value="${strategyKey}"]`);
-  if (radio) {
-    radio.checked = true;
-    // Dispatch change event
-    radio.dispatchEvent(new Event('change', { bubbles: true }));
-    // Update badge immediately
-    const badge = document.getElementById('benchmarkActiveBadge');
-    if (badge) badge.textContent = `Aktif: ${strategyKey.toUpperCase()}`;
-    // Re-render table to update active row styling
-    fetch('/api/benchmark')
-      .then(r => r.json())
-      .then(d => {
-        if (d.benchmark) renderBenchmarkTable(d.benchmark, strategyKey);
-      })
-      .catch(() => {});
-  }
-};
-
-// Polling Logs
-async function pollLogs() {
+async function inspectHistoricalRun(runId) {
   try {
-    const source = appState.activeLogSource || 'server';
-    const res = await fetch(`/api/logs?source=${source}`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.logs) {
-        const box = document.getElementById('logStreamBox');
-        box.textContent = data.logs;
-        box.scrollTop = box.scrollHeight; // Auto-scroll to bottom
-      }
+    const res = await fetch(`/api/runs/${runId}`);
+    if (!res.ok) return;
+    const runData = await res.json();
+    state.inspectedRun = runData;
+
+    // Show inspect banner
+    const banner = document.getElementById('inspectBanner');
+    const runIdText = document.getElementById('inspectRunId');
+    if (banner && runIdText) {
+      runIdText.textContent = runId;
+      banner.style.display = 'flex';
     }
+
+    renderHistoricalRunsTable();
+    renderChart();
+
+    // Scroll to chart smoothly
+    document.getElementById('cardMetricsPlots')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } catch (err) {
-    // ignore
+    console.error('Error inspecting run:', err);
   }
 }
 
-// Fetch initial benchmark
-async function fetchInitialBenchmark() {
+function exitInspect() {
+  state.inspectedRun = null;
+  const banner = document.getElementById('inspectBanner');
+  if (banner) banner.style.display = 'none';
+  renderHistoricalRunsTable();
+  renderChart();
+}
+
+// -------------------------------------------------------------
+// 4. BENCHMARK COMPARISON TABLE
+// -------------------------------------------------------------
+async function fetchBenchmark() {
   try {
     const res = await fetch('/api/benchmark');
-    if (res.ok) {
-      const data = await res.json();
-      if (data.benchmark) {
-        renderBenchmarkTable(data.benchmark, data.active_strategy || 'fedbn');
-      }
+    if (!res.ok) return;
+    const data = await res.json();
+    state.benchmarkData = data.benchmark || {};
+
+    const activeBadge = document.getElementById('benchmarkActiveBadge');
+    if (activeBadge && data.active_strategy) {
+      activeBadge.textContent = `Aktif: ${data.active_strategy.toUpperCase()}`;
     }
+
+    renderBenchmarkTable();
   } catch (err) {
-    // ignore
+    console.error('Error fetching benchmark:', err);
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  initChart();
-  setupEventListeners();
-  fetchInitialBenchmark();
-  
-  const refreshBtn = document.getElementById('btnRefreshBenchmark');
-  if (refreshBtn) {
-    refreshBtn.addEventListener('click', fetchInitialBenchmark);
+function renderBenchmarkTable() {
+  const tbody = document.getElementById('benchmarkTableBody');
+  if (!tbody || !state.benchmarkData) return;
+
+  const entries = Object.entries(state.benchmarkData);
+  if (entries.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted">Belum ada data benchmark.</td></tr>`;
+    return;
   }
 
-  setInterval(pollBackend, 2000);
-  setInterval(pollLogs, 2500);
+  tbody.innerHTML = entries.map(([sKey, item]) => {
+    const name = item.name || sKey.toUpperCase();
+    const f1 = item.best_f1 != null ? Number(item.best_f1).toFixed(4) : (item.macro_f1 != null ? Number(item.macro_f1).toFixed(4) : '-');
+    const auroc = item.auroc != null ? Number(item.auroc).toFixed(4) : '-';
+    const loss = item.final_loss != null ? Number(item.final_loss).toFixed(4) : '-';
+    const speed = item.speed_sec != null ? `${item.speed_sec} s/rd` : '-';
+    const numRuns = item.num_runs ?? 0;
+    const status = item.status || 'pending';
+
+    return `
+      <tr>
+        <td style="font-weight: 700; color: #1e293b;">${name}</td>
+        <td style="color: #475569;">${item.mechanism || '-'}</td>
+        <td style="color: #64748b; font-size: 0.68rem;">${item.target || '-'}</td>
+        <td class="f1-highlight">${f1}</td>
+        <td class="mono">${auroc}</td>
+        <td class="mono">${loss}</td>
+        <td class="mono">${speed}</td>
+        <td class="mono" style="text-align: center;">${numRuns}</td>
+        <td><span class="badge-status ${status}">${status}</span></td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// -------------------------------------------------------------
+// 5. CLIENT STATUS & TELEMETRY
+// -------------------------------------------------------------
+async function fetchStatus() {
+  try {
+    const res = await fetch('/api/status');
+    if (!res.ok) return;
+    const data = await res.json();
+
+    state.isRunning = Boolean(data.is_running);
+    updateServerBadge(data.server_status);
+    updateControlButtons(state.isRunning);
+    updateClients(data.clients || {}, data.connected_clients ?? 0);
+    updateProgress(data);
+
+    // Ambil metrics jika sedang running
+    if (state.isRunning) {
+      await fetchMetrics();
+    }
+  } catch (err) {
+    console.error('Error fetching status:', err);
+  }
+}
+
+function updateServerBadge(status) {
+  const dot = document.getElementById('serverStatusDot');
+  const txt = document.getElementById('serverStatusText');
+  if (!dot || !txt) return;
+
+  status = (status || 'idle').toLowerCase();
+  dot.className = `dot ${status}`;
+  txt.textContent = `Server: ${status.charAt(0).toUpperCase() + status.slice(1)}`;
+}
+
+function updateControlButtons(isRunning) {
+  const btnStart = document.getElementById('btnStartTraining');
+  const btnStop = document.getElementById('btnStopTraining');
+  if (btnStart) btnStart.disabled = isRunning;
+  if (btnStop) btnStop.disabled = !isRunning;
+}
+
+function updateClients(clients, connectedCount) {
+  const summaryEl = document.getElementById('clientsConnectedSummary');
+  if (summaryEl) {
+    summaryEl.textContent = `${connectedCount} / 3 Klien Aktif`;
+    summaryEl.className = `badge-status ${connectedCount >= 3 ? 'online' : (connectedCount > 0 ? 'training' : 'offline')}`;
+  }
+
+  ['vm2', 'vm3', 'vm4'].forEach(k => {
+    const info = clients[k];
+    const rowEl = document.getElementById(`clientNode${k.charAt(0).toUpperCase() + k.slice(1)}`);
+    const badgeEl = document.getElementById(`badge${k.charAt(0).toUpperCase() + k.slice(1)}`);
+    const timingEl = document.getElementById(`timing${k.charAt(0).toUpperCase() + k.slice(1)}`);
+
+    if (!rowEl || !info) return;
+
+    const st = info.status || 'offline';
+    rowEl.className = `client-node-row is-${st}`;
+    if (badgeEl) {
+      badgeEl.className = `badge-status ${st}`;
+      badgeEl.textContent = info.status_label || st;
+    }
+
+    if (timingEl) {
+      if (st === 'training') {
+        timingEl.textContent = `R${info.current_round} • Ep ${info.epoch}/${info.total_epochs} • Batch ${info.batch}/${info.total_batches}`;
+      } else if (st === 'online') {
+        timingEl.textContent = 'Online (Standby gRPC)';
+      } else {
+        timingEl.textContent = 'Node Offline';
+      }
+    }
+  });
+}
+
+function updateProgress(data) {
+  const roundText = document.getElementById('progressRoundText');
+  const percentText = document.getElementById('progressPercentText');
+  const barFill = document.getElementById('progressBarFill');
+  const etaText = document.getElementById('progressEtaText');
+  const speedText = document.getElementById('progressSpeedText');
+
+  const curRound = data.current_round ?? 0;
+  const totalRounds = data.total_rounds ?? 50;
+  const pct = totalRounds > 0 ? Math.min(100, Math.round((curRound / totalRounds) * 100)) : 0;
+
+  if (roundText) {
+    roundText.textContent = state.isRunning
+      ? `Ronde Federasi: ${curRound} / ${totalRounds}`
+      : (curRound > 0 ? `Selesai Ronde: ${curRound} / ${totalRounds}` : 'Ronde Federasi: Standby');
+  }
+  if (percentText) percentText.textContent = `${pct}%`;
+  if (barFill) barFill.style.width = `${pct}%`;
+
+  if (etaText) {
+    etaText.textContent = data.eta_seconds != null ? `${Math.ceil(data.eta_seconds / 60)} menit` : (state.isRunning ? 'Menghitung...' : 'Siap dimulai');
+  }
+  if (speedText) {
+    speedText.textContent = data.avg_round_duration != null ? `Laju: ${data.avg_round_duration} s/rd` : 'Kecepatan: --';
+  }
+}
+
+// -------------------------------------------------------------
+// 6. METRICS & LOGS POLLING
+// -------------------------------------------------------------
+async function fetchMetrics() {
+  try {
+    const res = await fetch('/api/metrics');
+    if (!res.ok) return;
+    const data = await res.json();
+    state.metricsHistory = data;
+    renderChart();
+  } catch (err) {
+    console.error('Error fetching metrics:', err);
+  }
+}
+
+async function fetchLogs() {
+  const box = document.getElementById('logStreamBox');
+  if (!box) return;
+
+  try {
+    const res = await fetch(`/api/logs?source=${state.activeLogSource}`);
+    if (!res.ok) return;
+    const text = await res.text();
+    if (text) {
+      const isScrolledToBottom = box.scrollHeight - box.clientHeight <= box.scrollTop + 40;
+      box.textContent = text;
+      if (isScrolledToBottom) {
+        box.scrollTop = box.scrollHeight;
+      }
+    }
+  } catch (err) {
+    console.error('Error fetching logs:', err);
+  }
+}
+
+// -------------------------------------------------------------
+// 7. EXPERIMENT START / STOP / RESET
+// -------------------------------------------------------------
+async function startTraining() {
+  const form = document.getElementById('formExperimentControl');
+  if (!form) return;
+
+  const formData = new FormData(form);
+  const payload = {};
+  formData.forEach((value, key) => {
+    if (['num_rounds', 'local_epochs', 'batch_size'].includes(key)) {
+      payload[key] = parseInt(value, 10);
+    } else if (['learning_rate', 'proximal_mu', 'fedbb_alpha', 'fedsol_mu'].includes(key)) {
+      payload[key] = parseFloat(value);
+    } else {
+      payload[key] = value;
+    }
+  });
+
+  const btnStart = document.getElementById('btnStartTraining');
+  if (btnStart) btnStart.disabled = true;
+
+  try {
+    const res = await fetch('/api/experiment/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const result = await res.json();
+    if (res.ok) {
+      state.isRunning = true;
+      exitInspect();
+      fetchStatus();
+      fetchBenchmark();
+      fetchHistoricalRuns();
+    } else {
+      alert(`Gagal memulai eksperimen: ${result.message || 'Error server'}`);
+      if (btnStart) btnStart.disabled = false;
+    }
+  } catch (err) {
+    alert(`Terjadi kesalahan jaringan: ${err.message}`);
+    if (btnStart) btnStart.disabled = false;
+  }
+}
+
+async function stopTraining() {
+  if (!confirm('Hentikan proses pelatihan Flower Server yang sedang berjalan?')) return;
+  try {
+    await fetch('/api/experiment/stop', { method: 'POST' });
+    state.isRunning = false;
+    fetchStatus();
+    fetchBenchmark();
+    fetchHistoricalRuns();
+  } catch (err) {
+    alert(`Gagal menghentikan pelatihan: ${err.message}`);
+  }
+}
+
+async function resetExperiment() {
+  if (!confirm('Reset data live experiment saat ini? (Data permanen di results/runs/ TIDAK akan terhapus)')) return;
+  try {
+    await fetch('/api/experiment/reset', { method: 'POST' });
+    fetchStatus();
+    fetchMetrics();
+    fetchBenchmark();
+    fetchHistoricalRuns();
+  } catch (err) {
+    alert(`Gagal reset: ${err.message}`);
+  }
+}
+
+// -------------------------------------------------------------
+// 8. EVENT LISTENERS INITIALIZATION
+// -------------------------------------------------------------
+document.addEventListener('DOMContentLoaded', () => {
+  initChart();
+
+  // Listeners Radio Strategi
+  document.querySelectorAll('input[name="strategy"]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      renderModularOptions(e.target.value);
+    });
+  });
+  renderModularOptions('fedbn'); // Default initial
+
+  // Listeners Action Buttons
+  document.getElementById('btnStartTraining')?.addEventListener('click', startTraining);
+  document.getElementById('btnStopTraining')?.addEventListener('click', stopTraining);
+  document.getElementById('btnResetExperiment')?.addEventListener('click', resetExperiment);
+
+  // Listeners Segmented Controls: Mode Chart
+  document.querySelectorAll('#chartModeTabs .seg-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      document.querySelectorAll('#chartModeTabs .seg-btn').forEach(b => b.classList.remove('active'));
+      e.target.classList.add('active');
+      state.chartMode = e.target.dataset.mode;
+      renderChart();
+    });
+  });
+
+  // Listeners Segmented Controls: Metric Switcher
+  document.querySelectorAll('.metric-control .seg-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      document.querySelectorAll('.metric-control .seg-btn').forEach(b => b.classList.remove('active'));
+      e.target.classList.add('active');
+      state.activeMetric = e.target.dataset.metric;
+      renderChart();
+    });
+  });
+
+  // Listeners Segmented Controls: Log Source Tabs
+  document.querySelectorAll('#logSourceTabs .seg-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      document.querySelectorAll('#logSourceTabs .seg-btn').forEach(b => b.classList.remove('active'));
+      e.target.classList.add('active');
+      state.activeLogSource = e.target.dataset.source;
+      fetchLogs();
+    });
+  });
+
+  // Historical Runs Refresh & Filter
+  document.getElementById('btnRefreshHistory')?.addEventListener('click', fetchHistoricalRuns);
+  document.getElementById('filterHistoryStrategy')?.addEventListener('change', renderHistoricalRunsTable);
+  document.getElementById('btnExitInspect')?.addEventListener('click', exitInspect);
+
+  // Benchmark Refresh
+  document.getElementById('btnRefreshBenchmark')?.addEventListener('click', fetchBenchmark);
+
+  // Download Model
+  document.getElementById('btnDownloadModel')?.addEventListener('click', () => {
+    window.location.href = '/api/download-model?tag=best';
+  });
+
+  // Initial Fetches
+  fetchStatus();
+  fetchMetrics();
+  fetchBenchmark();
+  fetchHistoricalRuns();
+  fetchLogs();
+
+  // Polling Loops
+  state.statusTimer = setInterval(fetchStatus, 2500);
+  state.logsTimer = setInterval(fetchLogs, 2500);
 });
 
+// Expose globals for inline HTML onclick attributes
+window.inspectHistoricalRun = inspectHistoricalRun;
+window.exitInspect = exitInspect;

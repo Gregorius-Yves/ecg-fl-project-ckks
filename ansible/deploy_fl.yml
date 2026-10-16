@@ -12,11 +12,11 @@
         path: "{{ item }}"
         state: directory
         owner: "{{ ansible_user }}"
-        group: docker
+        group: "{{ ansible_user }}"
         mode: "0775"
       loop:
         - "{{ project_root_remote }}"
-        - "{{ checkpoints_dir_remote }}"
+        - "{{ results_dir_remote }}"
         - "{{ logs_dir_remote }}"
 
     - name: Clone atau pull kode terbaru dari Git repository (jika use_git_clone=true)
@@ -40,139 +40,58 @@
           - "--exclude=.venv"
           - "--exclude=venv"
           - "--exclude=data/*"
-          - "--exclude=checkpoints/*"
+          - "--exclude=results/*"
+          - "--exclude=logs/*"
       when: not (use_git_clone | bool)
 
 
 # ------------------------------------------------------------------------------
-# DEPLOYMENT VM 1: FL SERVER & STREAMLIT DASHBOARD
+# DEPLOYMENT VM 1: DASHBOARD + FL SERVER (satu container; server dijalankan dari dashboard)
 # ------------------------------------------------------------------------------
-- name: "[2/3] Build & Jalankan FL Server dan Dashboard di VM 1"
+- name: "[2/3] Build & Jalankan Dashboard + FL Server di VM 1"
   hosts: server
   become: true
   tasks:
-    - name: Buat Dockerfile Server jika belum ada di remote
-      ansible.builtin.copy:
-        dest: "{{ project_root_remote }}/Dockerfile.server"
-        mode: "0644"
-        content: |
-          FROM python:3.10-slim
-          WORKDIR /app
-          RUN apt-get update && apt-get install -y --no-install-recommends \
-              build-essential curl libgomp1 && \
-              rm -rf /var/lib/apt/lists/*
-          COPY requirements.txt .
-          RUN pip install --no-cache-dir -r requirements.txt
-          COPY . .
-          EXPOSE 8080
-          CMD ["python3", "src/server.py"]
-
-    - name: Buat Dockerfile Web UI jika belum ada di remote
-      ansible.builtin.copy:
-        dest: "{{ project_root_remote }}/Dockerfile.dashboard"
-        mode: "0644"
-        content: |
-          FROM python:3.10-slim
-          WORKDIR /app
-          RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
-          COPY . .
-          EXPOSE 8501
-          CMD ["python3", "src/ui/server.py"]
-
-    - name: Buat requirements.txt default jika belum tersedia
-      ansible.builtin.copy:
-        dest: "{{ project_root_remote }}/requirements.txt"
-        force: false
-        mode: "0644"
-        content: |
-          flwr>=1.7.0
-          torch>=2.1.0
-          torchvision
-          torchaudio
-          numpy>=1.24.0
-          scipy>=1.11.0
-          scikit-learn>=1.3.0
-          pandas>=2.1.0
-          matplotlib>=3.8.0
-          seaborn>=0.13.0
-          streamlit>=1.30.0
-          wfdb>=4.1.0
-          tqdm>=4.66.0
-
-    - name: Build Docker Image untuk FL Server
+    - name: Build Docker image (Dockerfile & requirements.txt dari repo)
       community.docker.docker_image:
-        name: "{{ server_image_name }}"
+        name: "{{ fl_image_name }}"
         build:
           path: "{{ project_root_remote }}"
-          dockerfile: Dockerfile.server
+          dockerfile: Dockerfile
         source: build
         force_source: true
 
-    - name: Build Docker Image untuk FL Dashboard
-      community.docker.docker_image:
-        name: "{{ dashboard_image_name }}"
-        build:
-          path: "{{ project_root_remote }}"
-          dockerfile: Dockerfile.dashboard
-        source: build
-        force_source: true
-
-    - name: Hentikan dan bersihkan container lama (jika berjalan)
-      community.docker.docker_container:
-        name: "{{ item }}"
-        state: absent
-        force_kill: true
-      loop:
-        - fl-server
-        - fl-dashboard
-
-    - name: Jalankan Container FL Server (Flower Server gRPC Port 8080)
-      community.docker.docker_container:
-        name: fl-server
-        image: "{{ server_image_name }}"
-        state: started
-        restart_policy: unless-stopped
-        ports:
-          - "{{ fl_server_port }}:8080"
-        volumes:
-          - "{{ checkpoints_dir_remote }}:/app/checkpoints"
-          - "{{ logs_dir_remote }}:/app/logs"
-        env:
-          SERVER_HOST: "0.0.0.0"
-          SERVER_PORT: "8080"
-          STRATEGY: "{{ fl_strategy }}"
-          NUM_ROUNDS: "{{ fl_num_rounds | string }}"
-          MIN_FIT_CLIENTS: "{{ fl_min_fit_clients | string }}"
-          MIN_AVAILABLE_CLIENTS: "{{ fl_min_available_clients | string }}"
-          CHECKPOINT_DIR: "/app/checkpoints"
-          LOG_DIR: "/app/logs"
-          NUM_CLASSES: "{{ num_classes | string }}"
-
-    - name: Jalankan Container FL Dashboard (Streamlit Port 8501)
+    - name: Hentikan dan bersihkan container lama (hasil di volume results TIDAK terhapus)
       community.docker.docker_container:
         name: fl-dashboard
-        image: "{{ dashboard_image_name }}"
+        state: absent
+        force_kill: true
+
+    - name: Jalankan container Dashboard + Flower Server
+      community.docker.docker_container:
+        name: fl-dashboard
+        image: "{{ fl_image_name }}"
+        command: ["python", "-m", "src.ui.server"]
         state: started
         restart_policy: unless-stopped
         ports:
           - "{{ fl_dashboard_port }}:8501"
+          - "{{ fl_server_port }}:8080"
         volumes:
-          - "{{ checkpoints_dir_remote }}:/app/checkpoints:ro"
-          - "{{ logs_dir_remote }}:/app/logs:ro"
+          - "{{ results_dir_remote }}:/app/results"
+          - "{{ logs_dir_remote }}:/app/logs"
         env:
-          STREAMLIT_SERVER_PORT: "8501"
-          STREAMLIT_SERVER_ADDRESS: "0.0.0.0"
-          CHECKPOINT_DIR: "/app/checkpoints"
-          LOG_DIR: "/app/logs"
-          SERVER_IP: "{{ fl_server_ip }}"
+          HOST: "0.0.0.0"
+          PORT: "8501"
+          RESULTS_DIR: "/app/results"
 
-    - name: Tunggu hingga Flower Server siap menerima koneksi (Port 8080)
+    - name: Tunggu Dashboard siap (Port 8501)
       ansible.builtin.wait_for:
         host: "{{ fl_server_ip }}"
-        port: "{{ fl_server_port }}"
+        port: "{{ fl_dashboard_port }}"
         state: started
         delay: 3
-        timeout: 60
+        timeout: 90
 
 
 # ------------------------------------------------------------------------------
@@ -187,47 +106,15 @@
         path: "{{ data_dir }}"
         state: directory
         owner: "{{ ansible_user }}"
-        group: docker
+        group: "{{ ansible_user }}"
         mode: "0775"
 
-    - name: Buat Dockerfile Client jika belum ada di remote
-      ansible.builtin.copy:
-        dest: "{{ project_root_remote }}/Dockerfile.client"
-        mode: "0644"
-        content: |
-          FROM python:3.10-slim
-          WORKDIR /app
-          RUN apt-get update && apt-get install -y --no-install-recommends \
-              build-essential curl libgomp1 && \
-              rm -rf /var/lib/apt/lists/*
-          COPY requirements.txt .
-          RUN pip install --no-cache-dir -r requirements.txt
-          COPY . .
-          CMD ["python3", "src/client.py"]
-
-    - name: Buat requirements.txt client jika belum tersedia
-      ansible.builtin.copy:
-        dest: "{{ project_root_remote }}/requirements.txt"
-        force: false
-        mode: "0644"
-        content: |
-          flwr>=1.7.0
-          torch>=2.1.0
-          torchvision
-          torchaudio
-          numpy>=1.24.0
-          scipy>=1.11.0
-          scikit-learn>=1.3.0
-          pandas>=2.1.0
-          wfdb>=4.1.0
-          tqdm>=4.66.0
-
-    - name: Build Docker Image untuk FL Client
+    - name: Build Docker image client (image yang sama dengan server)
       community.docker.docker_image:
-        name: "{{ client_image_name }}"
+        name: "{{ fl_image_name }}"
         build:
           path: "{{ project_root_remote }}"
-          dockerfile: Dockerfile.client
+          dockerfile: Dockerfile
         source: build
         force_source: true
 
@@ -240,27 +127,23 @@
     - name: Jalankan Container FL Client ({{ dataset_label }})
       community.docker.docker_container:
         name: "{{ container_name }}"
-        image: "{{ client_image_name }}"
+        image: "{{ fl_image_name }}"
+        command: ["python", "-m", "src.client"]
         state: started
-        restart_policy: "no"
+        restart_policy: unless-stopped
         shm_size: "2gb"
         volumes:
-          - "{{ data_dir }}:/app/data:ro"
+          - "{{ data_dir }}:/app/data/{{ dataset_name }}:ro"
           - "{{ logs_dir_remote }}:/app/logs"
         env:
           SERVER_ADDRESS: "{{ server_address }}"
           CLIENT_ID: "{{ client_id | string }}"
           DATASET_NAME: "{{ dataset_name }}"
-          DATA_DIR: "/app/data"
-          LOG_DIR: "/app/logs"
-          STRATEGY: "{{ fl_strategy }}"
+          DATA_DIR: "/app/data/{{ dataset_name }}"
+          STRATEGY: "auto"      # strategi dikendalikan server
           BATCH_SIZE: "{{ fl_batch_size | string }}"
           LOCAL_EPOCHS: "{{ fl_local_epochs | string }}"
           LEARNING_RATE: "{{ fl_learning_rate | string }}"
-          SAMPLING_RATE: "{{ signal_sampling_rate | string }}"
-          SIGNAL_SAMPLES: "{{ signal_samples | string }}"
-          NUM_LEADS: "{{ num_leads | string }}"
-          NUM_CLASSES: "{{ num_classes | string }}"
 
     - name: Konfirmasi status container client
       ansible.builtin.command: "docker ps --filter name={{ container_name }} --format '{{ '{{' }}.Names{{ '}}' }}: {{ '{{' }}.Status{{ '}}' }}'"

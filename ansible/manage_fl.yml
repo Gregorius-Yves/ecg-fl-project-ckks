@@ -1,13 +1,15 @@
 ---
 # ==============================================================================
-# PLAYBOOK: Pengelolaan Cluster FL (Status, Stop, Logs, Fetch Checkpoints)
+# PLAYBOOK: Pengelolaan Cluster FL Berbasis Docker (Status, Logs, Restart, Stop, Fetch)
 # Penggunaan:
 #   ansible-playbook -i inventory.ini manage_fl.yml -e "action=status"
+#   ansible-playbook -i inventory.ini manage_fl.yml -e "action=logs"
+#   ansible-playbook -i inventory.ini manage_fl.yml -e "action=restart_clients"
 #   ansible-playbook -i inventory.ini manage_fl.yml -e "action=stop"
 #   ansible-playbook -i inventory.ini manage_fl.yml -e "action=fetch_results"
 # ==============================================================================
 
-- name: Operasi Manajemen Cluster FL
+- name: Operasi Manajemen Docker Cluster FL
   hosts: fl_cluster
   become: true
   gather_facts: false
@@ -20,7 +22,7 @@
     # ACTION: STATUS
     # -------------------------------------------------------------
     - name: "[Status] Cek status Docker containers di host"
-      ansible.builtin.command: docker ps -a --format "table {{ '{{' }}.Names{{ '}}' }}\t{{ '{{' }}.Status{{ '}}' }}\t{{ '{{' }}.Ports{{ '}}' }}"
+      ansible.builtin.command: docker ps -a --format "table {{ '{{' }}.Names{{ '}}' }}\t{{ '{{' }}.Status{{ '}}' }}\t{{ '{{' }}.Image{{ '}}' }}\t{{ '{{' }}.Ports{{ '}}' }}"
       register: container_status_output
       when: target_action == 'status'
       changed_when: false
@@ -33,19 +35,64 @@
       when: target_action == 'status'
 
     # -------------------------------------------------------------
+    # ACTION: LOGS
+    # -------------------------------------------------------------
+    - name: "[Logs] Ambil log container Dashboard Server"
+      ansible.builtin.command: "docker logs --tail 30 fl-dashboard"
+      register: server_container_logs
+      when: target_action == 'logs' and 'server' in group_names
+      changed_when: false
+      ignore_errors: true
+
+    - name: "[Logs] Tampilkan log Server"
+      ansible.builtin.debug:
+        msg: "{{ server_container_logs.stdout_lines }}"
+      when: target_action == 'logs' and 'server' in group_names
+
+    - name: "[Logs] Ambil log container Client"
+      ansible.builtin.command: "docker logs --tail 20 {{ container_name }}"
+      register: client_container_logs
+      when: target_action == 'logs' and 'clients' in group_names
+      changed_when: false
+      ignore_errors: true
+
+    - name: "[Logs] Tampilkan log Client"
+      ansible.builtin.debug:
+        msg: "{{ client_container_logs.stdout_lines }}"
+      when: target_action == 'logs' and 'clients' in group_names
+
+    # -------------------------------------------------------------
+    # ACTION: RESTART CLIENTS
+    # -------------------------------------------------------------
+    - name: "[Restart Clients] Restart container Client"
+      community.docker.docker_container:
+        name: "{{ container_name }}"
+        state: started
+        restart: true
+      when: target_action == 'restart_clients' and 'clients' in group_names
+
+    # -------------------------------------------------------------
+    # ACTION: RESTART DASHBOARD
+    # -------------------------------------------------------------
+    - name: "[Restart Dashboard] Restart container Dashboard"
+      community.docker.docker_container:
+        name: fl-dashboard
+        state: started
+        restart: true
+      when: target_action == 'restart_dashboard' and 'server' in group_names
+
+    # -------------------------------------------------------------
     # ACTION: STOP
     # -------------------------------------------------------------
-    - name: "[Stop] Hentikan semua container FL di server"
+    - name: "[Stop] Hentikan container Dashboard di Server"
       community.docker.docker_container:
-        name: "{{ item }}"
+        name: fl-dashboard
         state: absent
         force_kill: true
-      loop:
-        - fl-server
       when: target_action == 'stop' and 'server' in group_names
       ignore_errors: true
 
-    - name: "[Stop] Hentikan container FL di client"
+    - name: "[Stop] Hentikan container FL di Client"
       community.docker.docker_container:
         name: "{{ container_name }}"
         state: absent
@@ -58,32 +105,22 @@
         msg: "Container pada node {{ inventory_hostname }} berhasil dihentikan."
       when: target_action == 'stop'
 
-    # -------------------------------------------------------------
-    # ACTION: RESTART DASHBOARD
-    # -------------------------------------------------------------
-    - name: "[Restart Dashboard] Restart container Streamlit Dashboard"
-      community.docker.docker_container:
-        name: fl-dashboard
-        state: started
-        restart: true
-      when: target_action == 'restart_dashboard' and 'server' in group_names
 
-
-- name: "[Fetch Results] Download Hasil Checkpoints & Logs dari VM 1 ke Local Dev"
+- name: "[Fetch Results] Download Hasil (results/runs) dari VM 1 ke Mesin Lokal"
   hosts: server
   become: true
   gather_facts: false
   tasks:
-    - name: Sinkronkan checkpoint dan logs hasil eksperimen ke laptop lokal
+    - name: "Sinkronkan hasil run permanen (metrics.json + model) ke folder lokal results/"
       ansible.posix.synchronize:
         mode: pull
-        src: "{{ checkpoints_dir_remote }}/"
-        dest: "{{ playbook_dir }}/../results/checkpoints/"
+        src: "{{ results_dir_remote }}/"
+        dest: "{{ playbook_dir }}/../results/"
       when: action | default('') == 'fetch_results'
 
-    - name: Sinkronkan log eksperimen ke laptop lokal
+    - name: Sinkronkan log eksperimen ke folder lokal logs/
       ansible.posix.synchronize:
         mode: pull
         src: "{{ logs_dir_remote }}/"
-        dest: "{{ playbook_dir }}/../results/logs/"
+        dest: "{{ playbook_dir }}/../logs/"
       when: action | default('') == 'fetch_results'

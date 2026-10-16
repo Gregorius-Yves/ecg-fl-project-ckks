@@ -25,74 +25,126 @@ HOST = os.environ.get("HOST", "0.0.0.0")
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 LOG_DIR = os.path.join(BASE_DIR, "logs")
-CHECKPOINT_DIR = os.path.join(BASE_DIR, "checkpoints")
 
 os.makedirs(LOG_DIR, exist_ok=True)
-os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
 SERVER_LOG_FILE = os.path.join(LOG_DIR, "server_exec.log")
-BENCHMARK_FILE = os.path.join(LOG_DIR, "benchmark_summary.json")
 
-def load_or_init_benchmark():
-    default_benchmark = {
-        "fedbn": {
-            "name": "FedBN",
-            "full_name": "Federated Batch Normalization",
-            "mechanism": "Local BatchNorm1d (Isolasi mean/var per perangkat)",
-            "target": "Feature Shift (Sensitivitas Schiller vs GE MUSE)",
-            "macro_f1": None,
-            "auroc": None,
-            "final_loss": None,
-            "speed_sec": None,
-            "status": "pending",
-            "rounds_done": 0,
-            "note": "Optimal mengatasi perbedaan noise & baseline alat rekam EKG"
-        },
-        "fedbb": {
-            "name": "FedBB",
-            "full_name": "Class-Balanced Reweighting + PNB Loss",
-            "mechanism": "PNB Loss + Cluster-Balanced Weighting (CBR)",
-            "target": "Label Skew (Ketimpangan Diagnosis Kelas Langka)",
-            "macro_f1": None,
-            "auroc": None,
-            "final_loss": None,
-            "speed_sec": None,
-            "status": "pending",
-            "rounds_done": 0,
-            "note": "Unggul pada deteksi kelas minoritas (IAVB, PAC, AFL, PR)"
-        },
-        "fedsol": {
-            "name": "FedSOL",
-            "full_name": "Subspace Orthogonal Optimization",
-            "mechanism": "Orthogonal Gradient Projection terhadap Model Global",
-            "target": "Client Drift & Duration Skew (Resampling 100Hz)",
-            "macro_f1": None,
-            "auroc": None,
-            "final_loss": None,
-            "speed_sec": None,
-            "status": "pending",
-            "rounds_done": 0,
-            "note": "Mencegah catastrophic forgetting saat agregasi model"
-        }
+sys.path.insert(0, str(BASE_DIR))
+os.environ.setdefault("RESULTS_DIR", str(BASE_DIR / "results"))
+from src import results_store as rs  # noqa: E402
+from src.strategy_info import STRATEGY_INFO  # noqa: E402
+
+
+def _strategy_list(value):
+    if isinstance(value, list):
+        return [str(s).strip().lower() for s in value if str(s).strip()]
+    return [s.strip().lower() for s in str(value or "").split(",") if s.strip()]
+
+
+def _first_strategy(value):
+    names = _strategy_list(value)
+    if names and names[0] == "all":
+        return next(iter(STRATEGY_INFO))
+    return names[0] if names else None
+
+
+def _finished_rounds(run):
+    return [rd for rd in run.get("rounds", []) if "global" in rd]
+
+
+def _run_view(run):
+    """Ubah satu run menjadi seri per-ronde untuk grafik (semua nilai dari evaluasi nyata)."""
+    rds = _finished_rounds(run)
+    view = {
+        "run_id": run["run_id"],
+        "status": run.get("status"),
+        "rounds": [rd["round"] for rd in rds],
+        "loss": [rd["global"].get("val_loss") for rd in rds],
+        "train_loss": [rd.get("train_loss") for rd in rds],
+        "val_loss": [rd["global"].get("val_loss") for rd in rds],
+        "f1_macro": [rd["global"].get("f1_macro") for rd in rds],
+        "auroc": [rd["global"].get("auroc") for rd in rds],
     }
-    if os.path.exists(BENCHMARK_FILE):
-        try:
-            with open(BENCHMARK_FILE, "r") as f:
-                data = json.load(f)
-                for k, v in default_benchmark.items():
-                    if k not in data:
-                        data[k] = v
-                return data
-        except Exception:
-            pass
-    return default_benchmark
+    datasets = {ds for rd in rds for ds in rd.get("clients", {})}
+    datasets |= {c["dataset"] for c in KNOWN_CLIENTS.values()}
+    for ds in sorted(datasets):
+        cl = [rd.get("clients", {}).get(ds, {}) for rd in rds]
+        view[ds] = {
+            "loss": [c.get("val_loss") for c in cl],
+            "train_loss": [c.get("train_loss") for c in cl],
+            "f1_macro": [c.get("f1_macro") for c in cl],
+            "auroc": [c.get("auroc") for c in cl],
+        }
+    return view
 
-def save_benchmark(data):
-    try:
-        with open(BENCHMARK_FILE, "w") as f:
-            json.dump(data, f, indent=2)
-    except Exception:
-        pass
+
+def build_metrics_history(active_strat):
+    runs = rs.list_runs()
+    with_rounds = [r for r in runs if _finished_rounds(r)]
+    latest = {}
+    for r in with_rounds:  # urut waktu -> yang terakhir menang
+        latest[r["strategy"]] = r
+
+    hist = {"rounds": [], "loss": [], "val_loss": [], "f1_macro": [], "auroc": [], "strategies": {}}
+    for c in KNOWN_CLIENTS.values():
+        hist[c["dataset"]] = {"loss": [], "f1_macro": [], "auroc": []}
+
+    for sk in STRATEGY_INFO:
+        if sk in latest:
+            hist["strategies"][sk] = _run_view(latest[sk])
+    # strategi non-registry (mis. run lama) tetap ditampilkan
+    for sk, r in latest.items():
+        if sk not in hist["strategies"]:
+            hist["strategies"][sk] = _run_view(r)
+
+    focus = latest.get(active_strat) or (with_rounds[-1] if with_rounds else None)
+    if focus:
+        v = _run_view(focus)
+        hist.update({k: v[k] for k in ("rounds", "val_loss", "f1_macro", "auroc")})
+        hist["loss"] = v["train_loss"]
+        hist["run_id"] = focus["run_id"]
+        hist["focus_strategy"] = focus["strategy"]
+        for c in KNOWN_CLIENTS.values():
+            hist[c["dataset"]] = v[c["dataset"]]
+    return hist
+
+
+def build_benchmark(is_running, active_strat):
+    """Tabel benchmark = ringkasan run TERAKHIR tiap strategi (run lama tetap ada di results/runs)."""
+    runs = rs.list_runs()
+    out = {}
+    keys = list(STRATEGY_INFO) + sorted({r["strategy"] for r in runs} - set(STRATEGY_INFO))
+    for sk in keys:
+        info = STRATEGY_INFO.get(sk, {"name": sk.upper(), "full_name": sk, "mechanism": "-", "target": "-", "note": ""})
+        item = {k: v for k, v in info.items() if k != "exclude_bn"}
+        item.update({"macro_f1": None, "auroc": None, "final_loss": None, "speed_sec": None,
+                     "status": "pending", "rounds_done": 0, "run_id": None,
+                     "best_f1": None, "best_round": None,
+                     "num_runs": sum(1 for r in runs if r["strategy"] == sk)})
+        mine = [r for r in runs if r["strategy"] == sk]
+        live = [r for r in mine if r.get("status") == "running"]
+        with_rounds = [r for r in mine if _finished_rounds(r)]
+        run = (live[-1] if live and is_running and sk == active_strat else None) or (with_rounds[-1] if with_rounds else None)
+        if run:
+            rds = _finished_rounds(run)
+            item["run_id"] = run["run_id"]
+            item["rounds_done"] = len(rds)
+            status = run.get("status", "pending")
+            if status == "running" and not (is_running and sk == active_strat):
+                status = "interrupted"
+            item["status"] = status
+            if rds:
+                g = rds[-1]["global"]
+                item["macro_f1"], item["auroc"], item["final_loss"] = g.get("f1_macro"), g.get("auroc"), g.get("val_loss")
+                durs = [rd["duration"] for rd in rds if rd.get("duration")]
+                if durs:
+                    item["speed_sec"] = round(sum(durs) / len(durs), 1)
+                scored = [(rd["global"].get("f1_macro"), rd["round"]) for rd in rds if rd["global"].get("f1_macro") is not None]
+                if scored:
+                    item["best_f1"], item["best_round"] = max(scored)
+        out[sk] = item
+    return out
 
 
 import time
@@ -221,8 +273,8 @@ class ClientTracker:
                 "total_batches": hb.get("total_batches", 0) if hb else 0,
                 "learning_rate": hb.get("learning_rate", pm.config.get("learning_rate", 0.001)) if hb else pm.config.get("learning_rate", 0.001),
                 "last_seen": hb["last_seen"] if hb else None,
-                "measured_duration": (hb.get("measured_duration", 0) if is_server_active else 0),
-                "elapsed_in_round": (hb.get("elapsed_in_round", 0) if is_server_active else 0)
+                "measured_duration": (hb.get("measured_duration", 0) if (hb and is_server_active) else 0),
+                "elapsed_in_round": (hb.get("elapsed_in_round", 0) if (hb and is_server_active) else 0)
             }
 
         return result, connected_count
@@ -258,6 +310,12 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
         self.send_response(200)
         self.end_headers()
 
+    def _json(self, payload, code=200):
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps(payload).encode("utf-8"))
+
     def do_POST(self):
         if self.path == "/api/experiment/start":
             content_length = int(self.headers.get("Content-Length", 0))
@@ -265,6 +323,15 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
             params = json.loads(body.decode("utf-8")) if body else {}
 
             pm.config.update(params)
+
+            names = _strategy_list(pm.config.get("strategy", "fedbn"))
+            bad = [s for s in names if s != "all" and s not in STRATEGY_INFO]
+            if bad:
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "error", "message": f"Strategi tidak terdaftar: {bad}. Pilihan: {list(STRATEGY_INFO)}"}).encode("utf-8"))
+                return
 
             # 1. Hentikan SEMUA proses Flower server sebelumnya (baik dari UI maupun terminal CLI)
             try:
@@ -324,11 +391,15 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
                 env["VIRTUAL_ENV"] = str(BASE_DIR / "venv")
 
             env["PYTHONPATH"] = str(BASE_DIR)
+            env["RESULTS_DIR"] = str(rs.RESULTS_DIR)
             env["STRATEGY"] = str(pm.config["strategy"])
             env["NUM_ROUNDS"] = str(pm.config["num_rounds"])
             env["LOCAL_EPOCHS"] = str(pm.config["local_epochs"])
             env["LEARNING_RATE"] = str(pm.config["learning_rate"])
             env["BATCH_SIZE"] = str(pm.config["batch_size"])
+            env["PROXIMAL_MU"] = str(pm.config.get("proximal_mu", 0.01))
+            env["FEDBB_ALPHA"] = str(pm.config.get("fedbb_alpha", 0.5))
+            env["FEDSOL_MU"] = str(pm.config.get("fedsol_mu", 0.01))
 
             pm.start_time = time.time()
             pm.round_timestamps = {}
@@ -402,11 +473,7 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
                 except Exception:
                     pass
 
-            if os.path.exists(BENCHMARK_FILE):
-                try:
-                    os.remove(BENCHMARK_FILE)
-                except Exception:
-                    pass
+            # Hasil run di results/runs TIDAK pernah dihapus oleh reset (hanya state live & log).
 
             # Reset status dan log pada ClientTracker
             ClientTracker.client_logs = {"vm2": "", "vm3": "", "vm4": ""}
@@ -422,7 +489,7 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "reset", "message": "Sesi dan log berhasil di-reset"}).encode("utf-8"))
+            self.wfile.write(json.dumps({"status": "reset", "message": "Sesi live & log di-reset. Hasil run tersimpan permanen di results/runs"}).encode("utf-8"))
             return
 
         elif self.path == "/api/client/heartbeat":
@@ -491,16 +558,7 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
                 except Exception:
                     pass
 
-            metrics_history = {
-                "rounds": [],
-                "loss": [],
-                "val_loss": [],
-                "f1_macro": [],
-                "auroc": [],
-                "ptbxl": {"loss": [], "f1_macro": [], "auroc": []},
-                "chapman": {"loss": [], "f1_macro": [], "auroc": []},
-                "g12ec": {"loss": [], "f1_macro": [], "auroc": []}
-            }
+            # metrics_history dibangun dari results/runs (lihat build_metrics_history)
 
             # Deteksi status tiap strategi dari SERVER_LOG_FILE secara presisi
             completed_strats = set()
@@ -538,99 +596,10 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
                 if first_s in ["fedbn", "fedbb", "fedsol"]:
                     active_strat = first_s
 
-            if current_round > 0:
-                rounds = list(range(1, current_round + 1))
-                metrics_history["rounds"] = rounds
-                metrics_history["loss"] = [round(0.65 * (0.92 ** r) + 0.12, 4) for r in rounds]
-                metrics_history["val_loss"] = [round(0.68 * (0.91 ** r) + 0.15, 4) for r in rounds]
-                metrics_history["f1_macro"] = [round(0.55 + (0.35 * (1 - (0.88 ** r))), 3) for r in rounds]
-                metrics_history["auroc"] = [round(0.65 + (0.30 * (1 - (0.85 ** r))), 3) for r in rounds]
-
-                # VM 2: PTB-XL (Client 1 - Feature Shift)
-                metrics_history["ptbxl"]["loss"] = [round(0.63 * (0.93 ** r) + 0.11, 4) for r in rounds]
-                metrics_history["ptbxl"]["f1_macro"] = [round(0.57 + (0.34 * (1 - (0.89 ** r))), 3) for r in rounds]
-                metrics_history["ptbxl"]["auroc"] = [round(0.67 + (0.29 * (1 - (0.86 ** r))), 3) for r in rounds]
-
-                # VM 3: Chapman-Shaoxing (Client 2 - Label Skew)
-                metrics_history["chapman"]["loss"] = [round(0.67 * (0.91 ** r) + 0.13, 4) for r in rounds]
-                metrics_history["chapman"]["f1_macro"] = [round(0.54 + (0.36 * (1 - (0.87 ** r))), 3) for r in rounds]
-                metrics_history["chapman"]["auroc"] = [round(0.64 + (0.31 * (1 - (0.84 ** r))), 3) for r in rounds]
-
-                # VM 4: G12EC (Client 3 - Duration Skew)
-                metrics_history["g12ec"]["loss"] = [round(0.66 * (0.90 ** r) + 0.14, 4) for r in rounds]
-                metrics_history["g12ec"]["f1_macro"] = [round(0.53 + (0.37 * (1 - (0.86 ** r))), 3) for r in rounds]
-                metrics_history["g12ec"]["auroc"] = [round(0.63 + (0.32 * (1 - (0.83 ** r))), 3) for r in rounds]
-
-                # Trajectory Komparatif & Per-VM: Hanya strategi yang sudah selesai atau sedang aktif
-                metrics_history["strategies"] = {}
-                for sk in ["fedbn", "fedbb", "fedsol"]:
-                    if sk in completed_strats or (sk == active_strat and is_running):
-                        s_rnds = list(range(1, strat_rounds.get(sk, current_round) + 1))
-                        if not s_rnds:
-                            continue
-                        if sk == "fedbn":
-                            metrics_history["strategies"]["fedbn"] = {
-                                "loss": [round(0.63 * (0.91 ** r) + 0.14, 4) for r in s_rnds],
-                                "f1_macro": [round(0.57 + (0.28 * (1 - (0.87 ** r))), 3) for r in s_rnds],
-                                "auroc": [round(0.67 + (0.24 * (1 - (0.85 ** r))), 3) for r in s_rnds],
-                                "ptbxl": {
-                                    "loss": [round(0.61 * (0.91 ** r) + 0.12, 4) for r in s_rnds],
-                                    "f1_macro": [round(0.58 + (0.29 * (1 - (0.86 ** r))), 3) for r in s_rnds],
-                                    "auroc": [round(0.68 + (0.25 * (1 - (0.84 ** r))), 3) for r in s_rnds]
-                                },
-                                "chapman": {
-                                    "loss": [round(0.65 * (0.92 ** r) + 0.15, 4) for r in s_rnds],
-                                    "f1_macro": [round(0.53 + (0.29 * (1 - (0.88 ** r))), 3) for r in s_rnds],
-                                    "auroc": [round(0.64 + (0.25 * (1 - (0.86 ** r))), 3) for r in s_rnds]
-                                },
-                                "g12ec": {
-                                    "loss": [round(0.64 * (0.91 ** r) + 0.15, 4) for r in s_rnds],
-                                    "f1_macro": [round(0.54 + (0.29 * (1 - (0.87 ** r))), 3) for r in s_rnds],
-                                    "auroc": [round(0.65 + (0.25 * (1 - (0.85 ** r))), 3) for r in s_rnds]
-                                }
-                            }
-                        elif sk == "fedbb":
-                            metrics_history["strategies"]["fedbb"] = {
-                                "loss": [round(0.67 * (0.89 ** r) + 0.12, 4) for r in s_rnds],
-                                "f1_macro": [round(0.54 + (0.33 * (1 - (0.84 ** r))), 3) for r in s_rnds],
-                                "auroc": [round(0.65 + (0.27 * (1 - (0.83 ** r))), 3) for r in s_rnds],
-                                "ptbxl": {
-                                    "loss": [round(0.66 * (0.90 ** r) + 0.13, 4) for r in s_rnds],
-                                    "f1_macro": [round(0.55 + (0.30 * (1 - (0.86 ** r))), 3) for r in s_rnds],
-                                    "auroc": [round(0.66 + (0.25 * (1 - (0.85 ** r))), 3) for r in s_rnds]
-                                },
-                                "chapman": {
-                                    "loss": [round(0.64 * (0.88 ** r) + 0.11, 4) for r in s_rnds],
-                                    "f1_macro": [round(0.56 + (0.33 * (1 - (0.82 ** r))), 3) for r in s_rnds],
-                                    "auroc": [round(0.67 + (0.27 * (1 - (0.81 ** r))), 3) for r in s_rnds]
-                                },
-                                "g12ec": {
-                                    "loss": [round(0.68 * (0.89 ** r) + 0.13, 4) for r in s_rnds],
-                                    "f1_macro": [round(0.53 + (0.32 * (1 - (0.85 ** r))), 3) for r in s_rnds],
-                                    "auroc": [round(0.64 + (0.27 * (1 - (0.84 ** r))), 3) for r in s_rnds]
-                                }
-                            }
-                        elif sk == "fedsol":
-                            metrics_history["strategies"]["fedsol"] = {
-                                "loss": [round(0.65 * (0.90 ** r) + 0.13, 4) for r in s_rnds],
-                                "f1_macro": [round(0.55 + (0.31 * (1 - (0.86 ** r))), 3) for r in s_rnds],
-                                "auroc": [round(0.66 + (0.26 * (1 - (0.84 ** r))), 3) for r in s_rnds],
-                                "ptbxl": {
-                                    "loss": [round(0.64 * (0.91 ** r) + 0.13, 4) for r in s_rnds],
-                                    "f1_macro": [round(0.56 + (0.29 * (1 - (0.87 ** r))), 3) for r in s_rnds],
-                                    "auroc": [round(0.67 + (0.24 * (1 - (0.85 ** r))), 3) for r in s_rnds]
-                                },
-                                "chapman": {
-                                    "loss": [round(0.66 * (0.90 ** r) + 0.14, 4) for r in s_rnds],
-                                    "f1_macro": [round(0.54 + (0.31 * (1 - (0.86 ** r))), 3) for r in s_rnds],
-                                    "auroc": [round(0.65 + (0.26 * (1 - (0.84 ** r))), 3) for r in s_rnds]
-                                },
-                                "g12ec": {
-                                    "loss": [round(0.63 * (0.89 ** r) + 0.12, 4) for r in s_rnds],
-                                    "f1_macro": [round(0.56 + (0.32 * (1 - (0.83 ** r))), 3) for r in s_rnds],
-                                    "auroc": [round(0.67 + (0.26 * (1 - (0.82 ** r))), 3) for r in s_rnds]
-                                }
-                            }
+            # Metrik NYATA dari results/runs (hasil evaluasi model sungguhan di tiap klien)
+            if not is_running:
+                rs.mark_stale_running()
+            metrics_history = build_metrics_history(active_strat)
 
             # Kalkulasi Estimasi Waktu Selesai (ETA) berdasarkan durasi NYATA
             total_rounds = pm.config.get("num_rounds", 50)
@@ -682,38 +651,8 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
 
             elapsed_formatted = format_duration(elapsed_sec) if is_running else "--"
 
-            # Sinkronisasi live benchmark data
-            benchmark_data = load_or_init_benchmark()
-            for sk in ["fedbn", "fedbb", "fedsol"]:
-                if sk in completed_strats:
-                    benchmark_data[sk]["status"] = "completed"
-                    benchmark_data[sk]["rounds_done"] = total_rounds
-                    if sk in metrics_history.get("strategies", {}):
-                        s_m = metrics_history["strategies"][sk]
-                        if s_m.get("f1_macro"): benchmark_data[sk]["macro_f1"] = s_m["f1_macro"][-1]
-                        if s_m.get("auroc"): benchmark_data[sk]["auroc"] = s_m["auroc"][-1]
-                        if s_m.get("loss"): benchmark_data[sk]["final_loss"] = s_m["loss"][-1]
-                elif is_running and active_strat == sk:
-                    benchmark_data[sk]["status"] = "running"
-                    benchmark_data[sk]["rounds_done"] = current_round
-                    if len(completed_durations) > 0:
-                        benchmark_data[sk]["speed_sec"] = round(sum(completed_durations) / len(completed_durations), 1)
-                    if metrics_history.get("strategies", {}).get(sk, {}).get("f1_macro"):
-                        benchmark_data[sk]["macro_f1"] = metrics_history["strategies"][sk]["f1_macro"][-1]
-                    if metrics_history.get("strategies", {}).get(sk, {}).get("auroc"):
-                        benchmark_data[sk]["auroc"] = metrics_history["strategies"][sk]["auroc"][-1]
-                    if metrics_history.get("strategies", {}).get(sk, {}).get("loss"):
-                        benchmark_data[sk]["final_loss"] = metrics_history["strategies"][sk]["loss"][-1]
-                else:
-                    if benchmark_data[sk].get("status") != "completed":
-                        benchmark_data[sk]["status"] = "pending"
-                        benchmark_data[sk]["rounds_done"] = 0
-                        benchmark_data[sk]["macro_f1"] = None
-                        benchmark_data[sk]["auroc"] = None
-                        benchmark_data[sk]["final_loss"] = None
-                        benchmark_data[sk]["speed_sec"] = None
-
-            save_benchmark(benchmark_data)
+            # Benchmark dibangun dari hasil run NYATA di results/runs (bukan data sintetis)
+            benchmark_data = build_benchmark(is_running, active_strat)
 
             status_payload = {
                 "status": "running" if is_running else "idle",
@@ -782,29 +721,111 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"logs": logs, "source": source}).encode("utf-8"))
             return
 
-        elif self.path == "/api/download-model":
-            model_path = os.path.join(CHECKPOINT_DIR, "best_model.pth")
-            if not os.path.exists(model_path):
-                # Buat file placeholder checkpoint jika belum selesai 50 rounds
-                with open(model_path, "wb") as f:
-                    f.write(b"CardioPulseFL_ResNet1D_Checkpoint_StateDict_Sample\n")
-
+        elif self.path.startswith("/api/download-model"):
+            import urllib.parse
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            tag = q.get("tag", ["best"])[0]
+            run_id = q.get("run", [None])[0]
+            strategy = q.get("strategy", [None])[0]
+            if not run_id:
+                cands = [r for r in rs.list_runs()
+                         if (not strategy or r.get("strategy") == strategy) and tag in r.get("models", {})]
+                run_id = cands[-1]["run_id"] if cands else None
+            path = rs.model_path(run_id, tag) if run_id else None
+            if not path:
+                self.send_error(404, "Belum ada model hasil training yang tersimpan (jalankan eksperimen sampai ada ronde selesai).")
+                return
             self.send_response(200)
             self.send_header("Content-Type", "application/octet-stream")
-            self.send_header("Content-Disposition", 'attachment; filename="best_model.pth"')
+            self.send_header("Content-Disposition", f'attachment; filename="{run_id}_{tag}.pt"')
+            self.send_header("Content-Length", str(os.path.getsize(path)))
             self.end_headers()
-            with open(model_path, "rb") as f:
+            with open(path, "rb") as f:
                 self.wfile.write(f.read())
-        elif self.path == "/api/benchmark":
-            benchmark_data = load_or_init_benchmark()
+            return
+
+        elif self.path.startswith("/api/download-metrics"):
+            import urllib.parse
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            run_id = q.get("run", [None])[0]
+            if not run_id:
+                runs = rs.list_runs()
+                run_id = runs[-1]["run_id"] if runs else None
+            if not run_id:
+                self.send_error(404, "Run ID tidak ditemukan")
+                return
+            run_dir = rs.RUNS_DIR / run_id
+            metrics_path = run_dir / rs.METRICS_FILE
+            if not metrics_path.exists():
+                self.send_error(404, "File metrics.json tidak ditemukan untuk run ini")
+                return
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Disposition", f'attachment; filename="{run_id}_metrics.json"')
+            self.send_header("Content-Length", str(os.path.getsize(metrics_path)))
             self.end_headers()
-            self.wfile.write(json.dumps({
+            with open(metrics_path, "rb") as f:
+                self.wfile.write(f.read())
+            return
+
+        elif self.path == "/api/metrics":
+            strat = _first_strategy(pm.config.get("strategy"))
+            hist = build_metrics_history(strat)
+            self._json(hist)
+            return
+
+        elif self.path == "/api/strategies":
+            self._json({"strategies": STRATEGY_INFO})
+            return
+
+        elif self.path == "/api/runs":
+            runs = []
+            for r in rs.list_runs():
+                done = [rd for rd in r.get("rounds", []) if "global" in rd]
+                last = done[-1]["global"] if done else {}
+                scored = [(rd["global"].get("f1_macro"), rd["round"]) for rd in done if rd["global"].get("f1_macro") is not None]
+                best_f1, best_round = max(scored) if scored else (None, None)
+                run_dir = rs.RUNS_DIR / r["run_id"]
+                has_best = (run_dir / "best.pt").exists()
+                has_final = (run_dir / "final.pt").exists()
+                runs.append({
+                    "run_id": r["run_id"],
+                    "strategy": r["strategy"],
+                    "status": r.get("status"),
+                    "started_at": r.get("started_at"),
+                    "finished_at": r.get("finished_at"),
+                    "rounds_done": len(done),
+                    "config": r.get("config"),
+                    "models": r.get("models"),
+                    "best_f1": best_f1,
+                    "best_round": best_round,
+                    "final_loss": last.get("val_loss"),
+                    "final_f1": last.get("f1_macro"),
+                    "final_auroc": last.get("auroc"),
+                    "has_best_model": has_best,
+                    "has_final_model": has_final,
+                })
+            # Urutkan dari yang terbaru (descending)
+            runs.sort(key=lambda x: x.get("started_at") or 0, reverse=True)
+            self._json({"runs": runs, "total_runs": len(runs)})
+            return
+
+        elif self.path.startswith("/api/runs/"):
+            run = rs.load_run(self.path[len("/api/runs/"):].split("?")[0])
+            if not run:
+                self.send_error(404, "Run tidak ditemukan")
+                return
+            self._json(run)
+            return
+
+        elif self.path == "/api/benchmark":
+            running = bool(pm.server_process and pm.server_process.poll() is None)
+            self._json({
                 "status": "ok",
                 "active_strategy": pm.config.get("strategy", "fedbn"),
-                "benchmark": benchmark_data
-            }).encode("utf-8"))
+                "benchmark": build_benchmark(running, _first_strategy(pm.config.get("strategy"))),
+                "strategies": STRATEGY_INFO,
+            })
             return
 
         # Static file routing

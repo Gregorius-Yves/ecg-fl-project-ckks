@@ -8,7 +8,7 @@ git_repo_url: "https://github.com/Jeijesh/ecg-fl-project.git"
 git_branch: "main"
 use_git_clone: true # Clone repo dari GitHub ke tiap VM
 project_root_remote: "/opt/ecg-fl-project"
-checkpoints_dir_remote: "{{ project_root_remote }}/checkpoints"
+results_dir_remote: "{{ project_root_remote }}/results"   # hasil permanen (append-only)
 logs_dir_remote: "{{ project_root_remote }}/logs"
 
 # FL Network Settings
@@ -18,7 +18,7 @@ fl_dashboard_port: 8501
 server_address: "{{ fl_server_ip }}:{{ fl_server_port }}"
 
 # Experiment Hyperparameters Default
-fl_strategy: "fedbn" # Opsi: "fedbn", "fedbb", "fedsol"
+fl_strategy: "fedbn" # Opsi: "fedavg", "fedprox", "scaffold", "fedbn", "fedbb", "fedsol", "all" atau urutan "fedavg,fedprox"
 fl_num_rounds: 50
 fl_min_fit_clients: 3
 fl_min_available_clients: 3
@@ -35,6 +35,5 @@ num_classes: 27 # Multilabel cardiology classes harmonized (misal SNOMED / SCP-E
 
 # Docker Settings
 docker_network_name: "fl-net"
-server_image_name: "ecg-fl-server:latest"
-dashboard_image_name: "ecg-fl-dashboard:latest"
-client_image_name: "ecg-fl-client:latest"
+# Satu image untuk semua peran (dashboard+server, client, tool data) -> lihat ../Dockerfile
+fl_image_name: "ecg-fl:latest"

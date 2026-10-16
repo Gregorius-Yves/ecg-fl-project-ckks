@@ -1,46 +1,34 @@
 ---
 # ==============================================================================
-# PLAYBOOK: Hentikan Seluruh FL Client di VM Klien (VM 2, 3, 4)
-# Cukup jalankan dari VM Server:
+# PLAYBOOK: Hentikan Seluruh Container Docker FL Client di Worker Node (VM 2, 3, 4)
+# Penggunaan:
 #   ansible-playbook -i inventory.ini stop_clients.yml
 # ==============================================================================
 
-- name: Hentikan Flower Client di Seluruh Node Klien
+- name: Hentikan Flower Client Containers di Seluruh Node Klien
   hosts: clients
   become: true
   tasks:
-    - name: 1. Hentikan proses python3 src/client.py
-      ansible.builtin.shell: |
-        for pid in $(pgrep -f "[c]lient.py"); do
-          if [ "$pid" != "$$" ]; then
-            kill -9 "$pid" 2>/dev/null || true
-          fi
-        done
-        true
-      args:
-        executable: /bin/bash
-      failed_when: false
-
-    - name: 2. Hentikan container Docker jika ada
+    - name: 1. Hentikan dan hapus container Docker client
       community.docker.docker_container:
         name: "{{ container_name }}"
         state: absent
         force_kill: true
       ignore_errors: true
 
-    - name: 3. Hapus file log klien lama secara bersih
-      ansible.builtin.file:
-        path: "/home/{{ ansible_user }}/ecg-fl-project/logs/client.log"
-        state: absent
-
-    - name: 4. Konfirmasi proses telah berhenti
+    - name: 2. Hentikan sisa proses python jika ada di host
       ansible.builtin.shell: |
-        pgrep -f "[c]lient.py" || echo "STOPPED"
+        pkill -9 -f "src.client" || true
       args:
         executable: /bin/bash
-      register: stop_status
+      changed_when: false
+      ignore_errors: true
+
+    - name: 3. Konfirmasi container Docker telah nonaktif
+      ansible.builtin.command: "docker ps -a --filter name={{ container_name }} --format '{{ '{{' }}.Names{{ '}}' }}: {{ '{{' }}.Status{{ '}}' }}'"
+      register: check_stopped
       changed_when: false
 
-    - name: 5. Status
+    - name: 4. Status Penghentian
       ansible.builtin.debug:
-        msg: "🛑 [{{ inventory_hostname }}] Client {{ dataset_label }} telah dihentikan & log dibersihkan (Status: {{ stop_status.stdout | trim }})."
+        msg: "🛑 [{{ inventory_hostname }}] Container '{{ container_name }}' ({{ dataset_label }}) berhasil dihentikan."

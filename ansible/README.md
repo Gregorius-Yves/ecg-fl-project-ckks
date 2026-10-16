@@ -1,128 +1,125 @@
-# 🚀 Panduan Orkestrasi Ansible: Benchmark Federated Learning EKG Multi-Dataset
+# 🐳 Panduan Orkestrasi Docker via Ansible: Benchmark Federated Learning EKG
 
-Direktori ini berisi seluruh kumpulan playbook, inventarisasi host, dan variabel konfigurasi Ansible untuk mengotomasi deployment dan eksekusi eksperimen Federated Learning (FL) pada 4 Virtual Machine (VM) Ubuntu 24.04 (Noble Numbat).
-
----
-
-## 🗺️ Topologi Cluster & Alokasi Node
-
-| Node / Host | IP Address | Peran / Kontainer | Dataset / Fungsi | Karakteristik Heterogenitas |
-| :--- | :--- | :--- | :--- | :--- |
-| **VM 1** | `10.34.100.114` | `fl-server` (Port 8080)<br>`fl-dashboard` (Port 8501) | Flower Central Server & Streamlit Dashboard | Agregasi model global & visualisasi real-time |
-| **VM 2** | `10.34.100.122` | `fl-client-ptbxl` | PTB-XL (~21.799 rekaman) | Feature shift & skema diagnosis SCP-ECG |
-| **VM 3** | `10.34.100.123` | `fl-client-chapman` | Chapman-Shaoxing (~44.180 rekaman berlabel) | Label distribution skew & sinyal perangkat GE MUSE |
-| **VM 4** | `10.34.100.125` | `fl-client-g12ec` | G12EC CinC 2020 (~10.344 rekaman) | SNOMED-CT labels & durasi sinyal bervariasi |
+Seluruh siklus hidup cluster Federated Learning (FL) 12-lead EKG diorkestrasi secara **100% berbasis Docker** pada 4 Virtual Machine (VM).  
+Semua dependensi Python, PyTorch, dan Flower Server terisolasi di dalam Docker container `ecg-fl:latest`.
 
 ---
 
-## 📂 Struktur File Ansible
+## 🗺️ Topologi Cluster & Container Docker
+
+| Node / Host | IP Address | Container Docker | Volume Mount & Fungsi |
+| :--- | :--- | :--- | :--- |
+| **VM 1 (Server)** | `10.34.100.114` | `fl-dashboard` (Port 8501 & 8080) | Mount: `results/`, `logs/`<br>Orkestrasi Flower Server & Web UI |
+| **VM 2 (Client 1)** | `10.34.100.122` | `fl-client-ptbxl` | Mount: `/data/ptbxl`<br>19,532 sampel (Feature Shift) |
+| **VM 3 (Client 2)** | `10.34.100.123` | `fl-client-chapman` | Mount: `/data/chapman`<br>44,180 sampel (Label Skew) |
+| **VM 4 (Client 3)** | `10.34.100.125` | `fl-client-g12ec` | Mount: `/data/g12ec`<br>9,355 sampel (Duration Skew) |
+
+---
+
+## 📂 Daftar Playbook Ansible
 
 ```text
 ansible/
-├── ansible.cfg          # Konfigurasi SSH, privilege escalation, timeout
-├── inventory.ini        # Definisi IP VM 1, 2, 3, 4 dan Google Drive File ID dataset
+├── inventory.ini        # IP Address VM 1, 2, 3, 4 & spesifikasi container
 ├── group_vars/
-│   └── all.yml          # Variabel global (port, strategi, hyperparameter FL)
-├── setup_docker.yml     # Instalasi Docker Engine & Compose plugin (Ubuntu 24.04)
-├── distribute_data.yml  # Unduh & ekstrak dataset EKG via Google Drive (gdown)
-├── deploy_fl.yml        # Build & initial deployment container (Server, Web UI, Clients)
-├── run_experiment.yml   # Eksekusi eksperimen per-strategi (FedBN / FedBB / FedSOL)
-├── manage_fl.yml        # Utilitas monitoring status, stop container, & fetch results
-└── README.md            # Dokumentasi panduan eksekusi
+│   └── all.yml          # Hyperparameter & konfigurasi Docker image (ecg-fl:latest)
+├── setup_docker.yml     # Instalasi Docker Engine & Docker Compose di seluruh VM
+├── distribute_data.yml  # Download & ekstrak dataset EKG mentah ke folder /data
+├── preprocess_data.yml  # Pra-pemrosesan sinyal EKG di dalam Docker container terisolasi
+├── deploy_fl.yml        # Build image Docker & start cluster (Server + Dashboard + Clients)
+├── start_clients.yml    # Start seluruh container Docker client (fl-client-*)
+├── stop_clients.yml     # Stop & remove container Docker client
+├── run_experiment.yml   # Eksekusi eksperimen per-metode dengan parameter modular
+├── manage_fl.yml        # Operasi container (status, logs, restart, stop, fetch_results)
+└── README.md            # Panduan eksekusi ini
 ```
 
 ---
 
-## ⚙️ Persiapan Awal (Prasyarat)
+## 🛠️ Alur Eksekusi Eksperimen Berbasis Docker
 
-1. **SSH Key Access:** Pastikan laptop/mesin controller memiliki akses SSH key-based (tanpa password) ke semua VM:
-   ```bash
-   ssh-copy-id ubuntu@10.34.100.114
-   ssh-copy-id ubuntu@10.34.100.122
-   ssh-copy-id ubuntu@10.34.100.123
-   ssh-copy-id ubuntu@10.34.100.125
-   ```
-
-2. **Verifikasi Konektivitas Ansible:**
-   ```bash
-   cd ansible
-   ansible -i inventory.ini fl_cluster -m ping
-   ```
-
-3. **Koleksi Ansible Tambahan (Docker & Posix):**
-   ```bash
-   ansible-galaxy collection install community.docker ansible.posix
-   ```
-
----
-
-## 🛠️ Alur Eksekusi Sesuai Tahapan Blueprint
-
-### 1. Tahap Instalasi Docker Engine (Satu kali di awal)
-Pasang Docker Engine dan Docker Compose plugin resmi untuk Ubuntu 24.04 Noble di ke-4 VM:
+### 1. Deployment Awal (Build Image & Start Cluster)
+Membangun image `ecg-fl:latest` di semua VM dan menyalakan container `fl-dashboard` (Server) serta 3 container client:
 ```bash
-ansible-playbook -i inventory.ini setup_docker.yml
-```
-
-### 2. Tahap Build & Initial Deployment
-Menyinkronkan kode, membangun docker image, dan menyiapkan container Flower Server, Dashboard, dan 3 Client:
-```bash
-# Sinkronkan kode dari direktori lokal ke semua VM dan siapkan container:
+cd ansible
 ansible-playbook -i inventory.ini deploy_fl.yml
 ```
-> **Catatan:** Jika Anda ingin menggunakan Git repository langsung di VM, set `use_git_clone: true` di [group_vars/all.yml](file:///Users/stelatanuwijaya/Documents/Skripsi/ecg-fl-project/ansible/group_vars/all.yml).
+
+### 2. Pra-Pemrosesan Data EKG di dalam Docker (Opsional / Sekali Saja)
+Menjalankan pembersihan sinyal mentah ke file tensor `.pt` langsung di dalam Docker container:
+```bash
+ansible-playbook -i inventory.ini preprocess_data.yml
+```
+
+### 3. Mengontrol Container Client
+```bash
+# Menyalakan 3 container Docker client:
+ansible-playbook -i inventory.ini start_clients.yml
+
+# Menghentikan 3 container Docker client:
+ansible-playbook -i inventory.ini stop_clients.yml
+```
 
 ---
 
-### 3. Tahap Eksekusi Eksperimen Komparatif (Tahap 5)
-Jalankan masing-masing strategi secara bergantian sebanyak 50 round komunikasi:
+## 🧪 Menjalankan Eksperimen FL per-Metode
 
-#### 🧪 Run 1: FedBN (Local Batch Normalization)
-Menguji penanganan feature heterogeneity (perbedaan kalibrasi sinyal alat rekam Schiller vs GE MUSE). Parameter `BatchNorm1d` disimpan secara lokal di masing-masing client dan tidak diikutsertakan dalam agregasi server:
+Setiap eksperimen menghasilkan folder run baru di `results/runs/<metode>-<timestamp>/` (append-only, tidak pernah menimpa hasil lama).
+
 ```bash
+# 1. FedAvg (Baseline Standard)
+ansible-playbook -i inventory.ini run_experiment.yml -e "strategy=fedavg rounds=50"
+
+# 2. FedProx (dengan opsi modular proximal_mu)
+ansible-playbook -i inventory.ini run_experiment.yml -e "strategy=fedprox rounds=50 proximal_mu=0.01"
+
+# 3. SCAFFOLD (Control Variates Option 2)
+ansible-playbook -i inventory.ini run_experiment.yml -e "strategy=scaffold rounds=50"
+
+# 4. FedBN (Local BatchNorm Isolation)
 ansible-playbook -i inventory.ini run_experiment.yml -e "strategy=fedbn rounds=50"
-```
 
-#### 🧪 Run 2: FedBB (Balanced Loss & Client Balanced Reweighting)
-Menguji penanganan class & client imbalance menggunakan Positive Negative Balanced (PNB) Loss di sisi client dan Client Balanced Reweighting (CBR) di server:
-```bash
-ansible-playbook -i inventory.ini run_experiment.yml -e "strategy=fedbb rounds=50"
-```
+# 5. FedBB (dengan opsi modular fedbb_alpha)
+ansible-playbook -i inventory.ini run_experiment.yml -e "strategy=fedbb rounds=50 fedbb_alpha=0.5"
 
-#### 🧪 Run 3: FedSOL (Orthogonal Learning with Proximal Restriction)
-Menguji penanganan client drift dengan memproyeksikan gradien lokal ortogonal terhadap gradien penalti proksimal:
-```bash
-ansible-playbook -i inventory.ini run_experiment.yml -e "strategy=fedsol rounds=50"
+# 6. FedSOL (dengan opsi modular fedsol_mu)
+ansible-playbook -i inventory.ini run_experiment.yml -e "strategy=fedsol rounds=50 fedsol_mu=0.01"
 ```
 
 ---
 
-### 4. Tahap Monitoring & Visualisasi (Tahap 6)
-Setelah server dan dashboard berjalan, buka browser pada:
-👉 **[http://10.34.100.114:8501](http://10.34.100.114:8501)**
+## 📊 Monitoring & Operasi Docker Cluster
 
-Dashboard Streamlit menyediakan visualisasi:
-- Kurva konvergensi Training & Validation Loss per round.
-- Perbandingan performa Macro-F1, Macro-AUROC, dan Per-Class Recall (terutama aritmia kelas minoritas).
-- Komparasi waktu komputasi lokal dan efisiensi muatan parameter (MB).
-- Fitur interaktif inferensi sinyal EKG 12-lead (10 detik @ 500 Hz = 5000 sampel).
+### Memantau Lewat Web Dashboard:
+Buka di browser: **`http://10.34.100.114:8501`**  
+*(Menyediakan kontrol GUI, grafik konvergensi, inspeksi riwayat run, dan download model PyTorch `best.pt`)*.
 
----
-
-## 🔧 Manajemen & Pemeliharaan Cluster
-
-### Cek Status Container di Seluruh Node:
+### Cek Status Semua Container Docker:
 ```bash
 ansible-playbook -i inventory.ini manage_fl.yml -e "action=status"
 ```
 
-### Hentikan Semua Sesi FL:
+### Melihat Log Real-time Container:
+```bash
+ansible-playbook -i inventory.ini manage_fl.yml -e "action=logs"
+```
+
+### Restart Container Tertentu:
+```bash
+# Restart container dashboard server:
+ansible-playbook -i inventory.ini manage_fl.yml -e "action=restart_dashboard"
+
+# Restart container seluruh klien:
+ansible-playbook -i inventory.ini manage_fl.yml -e "action=restart_clients"
+```
+
+### Hentikan Seluruh Container Cluster:
 ```bash
 ansible-playbook -i inventory.ini manage_fl.yml -e "action=stop"
 ```
 
-### Unduh Checkpoint Model & Log Eksperimen ke Laptop Lokal:
+### Unduh Hasil Eksperimen (`results/runs`) ke Laptop Dev:
 ```bash
 ansible-playbook -i inventory.ini manage_fl.yml -e "action=fetch_results"
 ```
-Hasil akan tersimpan secara otomatis di direktori `results/checkpoints/` dan `results/logs/` di laptop dev Anda.
+Hasil evaluasi (`metrics.json`, `best.pt`, `final.pt`) akan ditarik ke direktori lokal `results/runs/` tanpa menimpa data yang sudah ada.

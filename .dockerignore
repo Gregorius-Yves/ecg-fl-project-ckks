@@ -1,0 +1,13 @@
+.git
+.gitignore
+.DS_Store
+**/__pycache__
+**/*.pyc
+.venv
+venv
+data
+results
+logs
+checkpoints
+ansible
+*.md

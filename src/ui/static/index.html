@@ -3,48 +3,52 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="CardioPulse FL - Federated Learning Experiment Control & Metric Monitoring Dashboard">
-  <title>CardioPulse FL — Panel Kontrol & Monitoring Eksperimen EKG</title>
+  <meta name="description" content="CardioPulse FL - Federated Learning Experiment Control & Clinical Metric Dashboard">
+  <title>CardioPulse FL — Panel Eksperimen & Monitoring EKG</title>
   
-  <!-- Professional Typography -->
+  <!-- Modern Clean Typography -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   
-  <!-- Light Theme CSS -->
+  <!-- Dense Scientific Theme CSS -->
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
 
-  <!-- Top App Navigation -->
+  <!-- Compact Top Navigation -->
   <header class="app-header" id="appHeader">
     <div class="brand-wrapper">
       <div class="brand-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
         </svg>
       </div>
       <div class="brand-info">
-        <h1>CardioPulse FL</h1>
+        <h1>CardioPulse FL <span class="version-tag">v2.1 • Research Core</span></h1>
         <p>Cross-Silo Federated Learning Benchmark • Multi-Dataset 12-Lead ECG</p>
       </div>
     </div>
 
     <div class="header-status">
+      <div class="storage-badge" title="Penyimpanan append-only: semua run tersimpan permanen di results/runs/">
+        <span class="status-indicator-dot dot-storage"></span>
+        <span id="storageSummaryText">Storage: Append-Only (0 Overwrite)</span>
+      </div>
       <div class="server-badge" id="serverStatusBadge">
         <span class="dot idle" id="serverStatusDot"></span>
-        <span id="serverStatusText">Server: Idle</span>
+        <span id="serverStatusText">Server: Standby</span>
       </div>
     </div>
   </header>
 
-  <!-- Main Dashboard Container -->
+  <!-- Main Container -->
   <main class="main-layout" id="mainContainer">
 
-    <!-- TOP SECTION: [1] Control Panel & [2] Client Node Status -->
+    <!-- TOP GRID: [1] Experiment Control + [2] Client Nodes Status -->
     <div class="top-grid">
 
       <!-- MODUL 1: EXPERIMENT CONTROL -->
@@ -52,103 +56,79 @@
         <div class="card-header">
           <div>
             <div class="card-title">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-              Experiment Control Panel
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 20v-6M6 20V10M18 20V4"/></svg>
+              Kontrol Eksperimen
             </div>
-            <div class="card-subtitle">Konfigurasi algoritma & hyperparameter pelatihan</div>
+            <div class="card-subtitle">Konfigurasi algoritma federasi & hyperparameter pelatihan</div>
           </div>
         </div>
 
         <div class="card-body">
           <form id="formExperimentControl">
-            <!-- Pilihan Algoritma Federasi -->
-            <div class="form-group full-width" style="margin-bottom: 1rem;">
-              <label>Algoritma Federated Learning</label>
-              <div class="strategy-picker">
-                <label class="strategy-option">
+            <!-- Pilihan Algoritma Federasi (Grid 6 Metode) -->
+            <div class="form-group full-width">
+              <label class="label-heading">Algoritma Federated Learning</label>
+              <div class="strategy-selector-grid">
+                <label class="strategy-pill">
+                  <input type="radio" name="strategy" value="fedavg">
+                  <div class="strategy-pill-content">
+                    <span class="strat-name">FedAvg</span>
+                    <span class="strat-desc">Baseline Standard</span>
+                  </div>
+                </label>
+                <label class="strategy-pill">
+                  <input type="radio" name="strategy" value="fedprox">
+                  <div class="strategy-pill-content">
+                    <span class="strat-name">FedProx</span>
+                    <span class="strat-desc">Proximal Term &mu;</span>
+                  </div>
+                </label>
+                <label class="strategy-pill">
+                  <input type="radio" name="strategy" value="scaffold">
+                  <div class="strategy-pill-content">
+                    <span class="strat-name">SCAFFOLD</span>
+                    <span class="strat-desc">Control Variates</span>
+                  </div>
+                </label>
+                <label class="strategy-pill">
                   <input type="radio" name="strategy" value="fedbn" checked>
-                  <div class="strategy-card">
-                    <span class="name">FedBN</span>
-                    <span class="desc">Local BatchNorm</span>
+                  <div class="strategy-pill-content">
+                    <span class="strat-name">FedBN</span>
+                    <span class="strat-desc">Local BatchNorm</span>
                   </div>
                 </label>
-                <label class="strategy-option">
+                <label class="strategy-pill">
                   <input type="radio" name="strategy" value="fedbb">
-                  <div class="strategy-card">
-                    <span class="name">FedBB</span>
-                    <span class="desc">PNB Loss + CBR</span>
+                  <div class="strategy-pill-content">
+                    <span class="strat-name">FedBB</span>
+                    <span class="strat-desc">PNB Loss + CBR &alpha;</span>
                   </div>
                 </label>
-                <label class="strategy-option">
+                <label class="strategy-pill">
                   <input type="radio" name="strategy" value="fedsol">
-                  <div class="strategy-card">
-                    <span class="name">FedSOL</span>
-                    <span class="desc">Orthogonal Step</span>
+                  <div class="strategy-pill-content">
+                    <span class="strat-name">FedSOL</span>
+                    <span class="strat-desc">Subspace Drift &mu;</span>
                   </div>
                 </label>
-                <label class="strategy-option">
-                  <input type="radio" name="strategy" value="custom" id="radioStratCustom">
-                  <div class="strategy-card" style="border-color: #6366f1;">
-                    <span class="name" style="color: #6366f1;">Urutan Kustom</span>
-                    <span class="desc" id="strategyCardCustomDesc">Multi-Eksperimen</span>
-                  </div>
-                </label>
-              </div>
-
-              <!-- Selector Urutan Eksekusi Strategi (Muncul saat Urutan Kustom dipilih) -->
-              <div class="custom-sequence-box" id="customSequenceBox" style="display: none; margin-top: 0.75rem; background: #f8fafc; padding: 0.75rem 1rem; border-radius: 8px; border: 1.5px solid #cbd5e1;">
-                <div style="font-size: 0.76rem; font-weight: 700; color: #334155; margin-bottom: 0.5rem; display: flex; align-items: center; justify-content: space-between;">
-                  <span>🎯 Tentukan Urutan Eksekusi Algoritma:</span>
-                  <span style="font-size: 0.7rem; color: #64748b; font-weight: 500;">Pilih mana yang jalan lebih dulu</span>
-                </div>
-                <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-                  <div style="flex: 1; min-width: 135px;">
-                    <label style="font-size: 0.68rem; color: #64748b; font-weight: 700; display: block; margin-bottom: 2px;">1. Mulai Pertama:</label>
-                    <select id="seqFirst" class="form-select-sm" style="width: 100%; padding: 0.35rem 0.5rem; font-size: 0.78rem; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; font-weight: 600;">
-                      <option value="fedbb" selected>1. FedBB (PNB Loss + CBR)</option>
-                      <option value="fedbn">1. FedBN (Local BatchNorm)</option>
-                      <option value="fedsol">1. FedSOL (Orthogonal Subspace)</option>
-                    </select>
-                  </div>
-                  <div style="font-weight: 800; color: #6366f1; padding-top: 1rem;">➔</div>
-                  <div style="flex: 1; min-width: 135px;">
-                    <label style="font-size: 0.68rem; color: #64748b; font-weight: 700; display: block; margin-bottom: 2px;">2. Kedua:</label>
-                    <select id="seqSecond" class="form-select-sm" style="width: 100%; padding: 0.35rem 0.5rem; font-size: 0.78rem; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; font-weight: 600;">
-                      <option value="fedsol" selected>2. FedSOL (Orthogonal Subspace)</option>
-                      <option value="fedbb">2. FedBB (PNB Loss + CBR)</option>
-                      <option value="fedbn">2. FedBN (Local BatchNorm)</option>
-                      <option value="none">-- Lewati (Cukup 2) --</option>
-                    </select>
-                  </div>
-                  <div style="font-weight: 800; color: #6366f1; padding-top: 1rem;">➔</div>
-                  <div style="flex: 1; min-width: 135px;">
-                    <label style="font-size: 0.68rem; color: #64748b; font-weight: 700; display: block; margin-bottom: 2px;">3. Ketiga:</label>
-                    <select id="seqThird" class="form-select-sm" style="width: 100%; padding: 0.35rem 0.5rem; font-size: 0.78rem; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; font-weight: 600;">
-                      <option value="fedbn" selected>3. FedBN (Local BatchNorm)</option>
-                      <option value="fedsol">3. FedSOL (Orthogonal Subspace)</option>
-                      <option value="fedbb">3. FedBB (PNB Loss + CBR)</option>
-                      <option value="none">-- Selesai --</option>
-                    </select>
-                  </div>
-                </div>
-                <div style="margin-top: 0.45rem; font-size: 0.72rem; color: #4338ca; font-weight: 600;" id="sequencePreviewText">
-                  Urutan eksekusi: <strong>FedBB</strong> ➔ <strong>FedSOL</strong> ➔ <strong>FedBN</strong>
-                </div>
               </div>
             </div>
 
-            <!-- Hyperparameter Grid -->
-            <div class="form-grid">
-              <div class="form-group full-width">
-                <label for="inputModelArch">Arsitektur Backbone</label>
-                <select id="inputModelArch" name="model_arch">
-                  <option value="resnet1d" selected>ResNet1D (12-Lead • 100 Hz / 1000 Samples)</option>
-                  <option value="resnet1d_deep">ResNet1D Deep (Multi-Stage Residual)</option>
-                </select>
+            <!-- MODULAR OPTIONS PANEL (Menyesuaikan otomatis dengan algoritma yang dipilih) -->
+            <div class="modular-params-panel" id="modularParamsPanel">
+              <div class="modular-header">
+                <span class="modular-title" id="modularTitle">Parameter Khusus Algoritma: FedBN</span>
+                <span class="modular-badge" id="modularBadge">Local Parameters</span>
               </div>
+              <div class="modular-body" id="modularBody">
+                <!-- Konten dinamis dirender lewat app.js -->
+              </div>
+            </div>
 
+            <!-- Hyperparameters Grid Padat -->
+            <div class="hyperparam-grid">
               <div class="form-group">
-                <label for="inputNumRounds">Ronde Federasi (Rounds)</label>
+                <label for="inputNumRounds">Ronde (Rounds)</label>
                 <input type="number" id="inputNumRounds" name="num_rounds" min="1" max="200" value="50" required>
               </div>
 
@@ -168,17 +148,17 @@
               </div>
             </div>
 
-            <!-- Action Buttons -->
-            <div class="action-buttons">
+            <!-- Tombol Eksekusi -->
+            <div class="action-buttons-row">
               <button type="button" class="btn btn-primary" id="btnStartTraining">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                Start Training
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                Mulai Pelatihan
               </button>
               <button type="button" class="btn btn-danger" id="btnStopTraining" disabled>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-                Stop / Abort
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                Hentikan Proses
               </button>
-              <button type="button" class="btn btn-outline" id="btnResetExperiment">
+              <button type="button" class="btn btn-secondary" id="btnResetExperiment">
                 Reset
               </button>
             </div>
@@ -186,93 +166,73 @@
         </div>
       </section>
 
-      <!-- MODUL 2: CLIENT STATUS DASHBOARD -->
+      <!-- MODUL 2: CLIENT STATUS & TELEMETRI -->
       <section class="card" id="cardClientDashboard">
         <div class="card-header">
           <div>
             <div class="card-title">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-              Client Nodes Status
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              Status Node Klien (Cross-Silo)
             </div>
-            <div class="card-subtitle">Konektivitas dan metadata 3 VM klien federasi</div>
+            <div class="card-subtitle">Konektivitas gRPC & telemetri pelatihan lokal 3 VM</div>
           </div>
-          <span class="badge-status offline" id="clientsConnectedSummary">0 / 3 Klien Terhubung</span>
+          <span class="badge-status offline" id="clientsConnectedSummary">0 / 3 Klien Aktif</span>
         </div>
 
         <div class="card-body">
-          <div class="clients-container">
+          <div class="client-nodes-stack">
             <!-- VM 2: PTB-XL -->
-            <div class="client-node-item node-ptbxl is-offline" id="clientNodeVm2">
-              <div class="client-left">
-                <div class="client-avatar">C1</div>
-                <div class="client-info">
-                  <h4>VM 2 — PTB-XL</h4>
-                  <p>10.34.100.122 • Schiller AG (Eropa)</p>
+            <div class="client-node-row is-offline" id="clientNodeVm2">
+              <div class="node-main-info">
+                <div class="node-id-badge">C1</div>
+                <div>
+                  <div class="node-title">VM 2 — PTB-XL</div>
+                  <div class="node-meta">10.34.100.122 • 19,532 sampel (Feature Shift)</div>
                 </div>
               </div>
-              <div class="client-right">
-                <div class="client-stats">
-                  <span>19,532 Rekaman (Feature Shift)</span>
-                  <strong id="timingVm2">Menunggu Ronde 1...</strong>
-                </div>
-                <span class="badge-status offline" id="badgeVm2">Offline</span>
-              </div>
+              <div class="node-telemetry-mono" id="timingVm2">Menunggu Ronde 1...</div>
+              <span class="badge-status offline" id="badgeVm2">Offline</span>
             </div>
 
             <!-- VM 3: Chapman-Shaoxing -->
-            <div class="client-node-item node-chapman is-offline" id="clientNodeVm3">
-              <div class="client-left">
-                <div class="client-avatar">C2</div>
-                <div class="client-info">
-                  <h4>VM 3 — Chapman-Shaoxing</h4>
-                  <p>10.34.100.123 • GE MUSE (Asia)</p>
+            <div class="client-node-row is-offline" id="clientNodeVm3">
+              <div class="node-main-info">
+                <div class="node-id-badge">C2</div>
+                <div>
+                  <div class="node-title">VM 3 — Chapman-Shaoxing</div>
+                  <div class="node-meta">10.34.100.123 • 44,180 sampel (Label Skew)</div>
                 </div>
               </div>
-              <div class="client-right">
-                <div class="client-stats">
-                  <span>44,180 Rekaman (Label Skew)</span>
-                  <strong id="timingVm3">Menunggu Ronde 1...</strong>
-                </div>
-                <span class="badge-status offline" id="badgeVm3">Offline</span>
-              </div>
+              <div class="node-telemetry-mono" id="timingVm3">Menunggu Ronde 1...</div>
+              <span class="badge-status offline" id="badgeVm3">Offline</span>
             </div>
 
             <!-- VM 4: G12EC -->
-            <div class="client-node-item node-g12ec is-offline" id="clientNodeVm4">
-              <div class="client-left">
-                <div class="client-avatar">C3</div>
-                <div class="client-info">
-                  <h4>VM 4 — G12EC (CinC 2020)</h4>
-                  <p>10.34.100.125 • SNOMED-CT (AS)</p>
+            <div class="client-node-row is-offline" id="clientNodeVm4">
+              <div class="node-main-info">
+                <div class="node-id-badge">C3</div>
+                <div>
+                  <div class="node-title">VM 4 — G12EC (CinC 2020)</div>
+                  <div class="node-meta">10.34.100.125 • 9,355 sampel (Duration Skew)</div>
                 </div>
               </div>
-              <div class="client-right">
-                <div class="client-stats">
-                  <span>9,355 Rekaman (Duration Skew)</span>
-                  <strong id="timingVm4">Menunggu Ronde 1...</strong>
-                </div>
-                <span class="badge-status offline" id="badgeVm4">Offline</span>
-              </div>
+              <div class="node-telemetry-mono" id="timingVm4">Menunggu Ronde 1...</div>
+              <span class="badge-status offline" id="badgeVm4">Offline</span>
             </div>
           </div>
 
-          <!-- Progress Bar Ronde Federasi & Live ETA -->
-          <div class="progress-container">
-            <div class="progress-header">
-              <span id="progressRoundText">Ronde Federasi: Menunggu Memulai...</span>
-              <span id="progressPercentText">0%</span>
+          <!-- Progress Bar Ronde & ETA -->
+          <div class="progress-section">
+            <div class="progress-labels">
+              <span id="progressRoundText">Ronde Federasi: Standby</span>
+              <span id="progressPercentText" class="progress-percent">0%</span>
             </div>
-            <div class="progress-bar-bg">
-              <div class="progress-bar-fill" id="progressBarFill"></div>
+            <div class="progress-track">
+              <div class="progress-fill" id="progressBarFill" style="width: 0%;"></div>
             </div>
-            <div class="progress-footer">
-              <div class="progress-eta-item">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                <span>Estimasi Selesai: <strong id="progressEtaText">Siap dimulai</strong></span>
-              </div>
-              <div class="progress-speed-item">
-                <span id="progressSpeedText">Laju: --</span>
-              </div>
+            <div class="progress-metrics-strip">
+              <span>Estimasi Selesai: <strong id="progressEtaText">Siap dimulai</strong></span>
+              <span id="progressSpeedText">Kecepatan: --</span>
             </div>
           </div>
         </div>
@@ -280,41 +240,96 @@
 
     </div>
 
-    <!-- MODUL BENCHMARK KOMPARASI: FEDBN vs FEDBB vs FEDSOL -->
-    <section class="card full-width benchmark-card" id="cardBenchmarkComparison" style="margin-bottom: 1.5rem;">
+    <!-- MODUL RIWAYAT EKSPERIMEN (HISTORICAL RUNS - ZERO OVERWRITE) -->
+    <section class="card full-width" id="cardHistoricalRuns">
       <div class="card-header">
         <div>
           <div class="card-title">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/><path d="M3 20h18"/></svg>
-            Tabel Komparasi Algoritma: FedBN vs FedBB vs FedSOL
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
+            Riwayat Eksperimen & Checkpoint Model
           </div>
           <div class="card-subtitle">
-            Hasil evaluasi komparatif multi-dataset EKG (PTB-XL, Chapman-Shaoxing, G12EC) terhadap tantangan heterogenitas klinis
+            Seluruh run tersimpan permanen di <code>results/runs/</code> (append-only) dan dapat diinspeksi kembali
           </div>
         </div>
-        <div class="benchmark-header-actions">
-          <span class="badge-status online" id="benchmarkActiveBadge">Aktif: FEDBN</span>
-          <button type="button" class="btn btn-outline" id="btnRefreshBenchmark" style="padding: 0.35rem 0.75rem; font-size: 0.75rem;">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-            Refresh Data
+        <div class="header-actions-group">
+          <select id="filterHistoryStrategy" class="form-select-sm">
+            <option value="all">Semua Algoritma</option>
+            <option value="fedavg">FedAvg</option>
+            <option value="fedprox">FedProx</option>
+            <option value="scaffold">SCAFFOLD</option>
+            <option value="fedbn">FedBN</option>
+            <option value="fedbb">FedBB</option>
+            <option value="fedsol">FedSOL</option>
+          </select>
+          <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshHistory">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            Segarkan
           </button>
         </div>
       </div>
 
       <div class="card-body">
         <div class="table-responsive">
-          <table class="benchmark-table" id="benchmarkTable">
+          <table class="compact-table" id="tableHistoryRuns">
             <thead>
               <tr>
-                <th>Algoritma FL</th>
-                <th>Mekanisme Khusus</th>
-                <th>Target Heterogenitas EKG</th>
-                <th>Global Macro-F1</th>
-                <th>Global AUROC</th>
-                <th>Validation Loss</th>
-                <th>Durasi / Ronde</th>
+                <th>ID Eksperimen</th>
+                <th>Waktu Mulai</th>
+                <th>Algoritma</th>
+                <th>Ronde</th>
                 <th>Status</th>
-                <th>Aksi</th>
+                <th>Best Macro-F1</th>
+                <th>Final Loss</th>
+                <th>Final AUROC</th>
+                <th>Unduh / Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="historyTableBody">
+              <tr>
+                <td colspan="9" class="text-center text-muted" style="padding: 1.5rem;">Memuat daftar riwayat eksperimen...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODUL BENCHMARK KOMPARATIF 6 ALGORITMA -->
+    <section class="card full-width" id="cardBenchmarkComparison">
+      <div class="card-header">
+        <div>
+          <div class="card-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/><path d="M3 20h18"/></svg>
+            Tabel Komparasi Algoritma
+          </div>
+          <div class="card-subtitle">
+            Evaluasi empiris multi-dataset 12-lead EKG terhadap tantangan heterogenitas klinis
+          </div>
+        </div>
+        <div class="header-actions-group">
+          <span class="badge-status online" id="benchmarkActiveBadge">Aktif: FEDBN</span>
+          <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshBenchmark">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            Segarkan
+          </button>
+        </div>
+      </div>
+
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="compact-table" id="benchmarkTable">
+            <thead>
+              <tr>
+                <th>Algoritma</th>
+                <th>Mekanisme Khusus</th>
+                <th>Target Heterogenitas</th>
+                <th>Best Macro-F1</th>
+                <th>AUROC</th>
+                <th>Val Loss</th>
+                <th>Durasi/Ronde</th>
+                <th>Total Run</th>
+                <th>Status</th>
               </tr>
             </thead>
             <tbody id="benchmarkTableBody">
@@ -322,125 +337,48 @@
             </tbody>
           </table>
         </div>
-
-        <!-- Comparative Insights Summary Grid -->
-        <div class="benchmark-highlights-grid" id="benchmarkHighlightsGrid">
-          <div class="highlight-card highlight-f1">
-            <div class="highlight-icon">🥇</div>
-            <div class="highlight-content">
-              <span class="highlight-label">Macro-F1 Tertinggi</span>
-              <strong class="highlight-value" id="highlightBestF1">FedBB (0.865)</strong>
-              <p class="highlight-desc">Unggul pada minority class berkat Positive-Negative Balanced Loss.</p>
-            </div>
-          </div>
-
-          <div class="highlight-card highlight-speed">
-            <div class="highlight-icon">⚡</div>
-            <div class="highlight-content">
-              <span class="highlight-label">Efisiensi & Durasi Tercepat</span>
-              <strong class="highlight-value" id="highlightBestSpeed">FedBN (~300s/rd)</strong>
-              <p class="highlight-desc">Beban parameter terendah karena BatchNorm1d diisolasi lokal.</p>
-            </div>
-          </div>
-
-          <div class="highlight-card highlight-auroc">
-            <div class="highlight-icon">🛡️</div>
-            <div class="highlight-content">
-              <span class="highlight-label">Stabilitas Subspace & AUROC</span>
-              <strong class="highlight-value" id="highlightBestAuroc">FedSOL (0.912)</strong>
-              <p class="highlight-desc">Mencegah client drift dengan proyeksi gradien ortogonal global.</p>
-            </div>
-          </div>
-
-          <div class="highlight-card highlight-thesis">
-            <div class="highlight-icon">📑</div>
-            <div class="highlight-content">
-              <span class="highlight-label">Rekomendasi Naskah Skripsi</span>
-              <strong class="highlight-value">Evaluasi Tripartit</strong>
-              <p class="highlight-desc">FedBN untuk variasi sensor, FedBB untuk imbalanced classes, FedSOL untuk stabilitas drift.</p>
-            </div>
-          </div>
-        </div>
       </div>
     </section>
 
-    <!-- BOTTOM SECTION: [3] Live Metric Plots & [4] Logs & Best Model -->
+    <!-- BOTTOM GRID: [3] Grafik Konvergensi + [4] Terminal Log & Model -->
     <div class="bottom-grid">
 
-      <!-- MODUL 3: LIVE MONITORING & METRIC PLOTS -->
+      <!-- MODUL 3: GRAFIK KONVERGENSI METRIK -->
       <section class="card" id="cardMetricsPlots">
         <div class="card-header">
           <div>
             <div class="card-title">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-              Live Monitoring & Metric Plots
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+              Grafik Konvergensi Metrik
             </div>
-            <div class="card-subtitle" id="metricPlotSubtitle">Performa konvergensi model global & per-node VM</div>
+            <div class="card-subtitle" id="metricPlotSubtitle">Kurva performa konvergensi model global & per-node VM</div>
           </div>
-          <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
-            <!-- View Mode Switcher: Komparasi Strategi vs Per-Client VM -->
-            <div class="chart-mode-tabs" id="chartModeTabs">
-              <button class="chart-mode-btn active" data-mode="strategy" title="Perbandingan Model Global 3 Algoritma">⚡ Global (FedBN vs BB vs SOL)</button>
-              <button class="chart-mode-btn" data-mode="fedbn_vm" title="Kurva Per-VM Klien untuk FedBN">🧠 FedBN (Per-VM)</button>
-              <button class="chart-mode-btn" data-mode="fedbb_vm" title="Kurva Per-VM Klien untuk FedBB">⚖️ FedBB (Per-VM)</button>
-              <button class="chart-mode-btn" data-mode="fedsol_vm" title="Kurva Per-VM Klien untuk FedSOL">📐 FedSOL (Per-VM)</button>
+          
+          <div class="chart-controls-wrapper">
+            <!-- Mode Switcher -->
+            <div class="segmented-control" id="chartModeTabs">
+              <button class="seg-btn active" data-mode="strategy">Global</button>
+              <button class="seg-btn" data-mode="fedavg_vm">FedAvg</button>
+              <button class="seg-btn" data-mode="fedprox_vm">FedProx</button>
+              <button class="seg-btn" data-mode="scaffold_vm">SCAFFOLD</button>
+              <button class="seg-btn" data-mode="fedbn_vm">FedBN</button>
+              <button class="seg-btn" data-mode="fedbb_vm">FedBB</button>
+              <button class="seg-btn" data-mode="fedsol_vm">FedSOL</button>
             </div>
-            <!-- Metric Tabs -->
-            <div class="chart-tabs">
-              <button class="chart-tab-btn active" data-metric="f1">F1-Macro</button>
-              <button class="chart-tab-btn" data-metric="auroc">AUROC</button>
-              <button class="chart-tab-btn" data-metric="loss">Loss</button>
+            <!-- Metric Switcher -->
+            <div class="segmented-control metric-control">
+              <button class="seg-btn active" data-metric="f1">Macro-F1</button>
+              <button class="seg-btn" data-metric="auroc">AUROC</button>
+              <button class="seg-btn" data-metric="loss">Loss</button>
             </div>
           </div>
         </div>
 
         <div class="card-body">
-          <!-- Live VM Telemetry Ribbon: Round, Epoch, Batch, LR di Tiap Node VM -->
-          <div class="node-telemetry-ribbon" id="nodeTelemetryRibbon">
-            <!-- VM 2 Telemetry -->
-            <div class="node-telemetry-chip" id="chip-vm2">
-              <div class="chip-top">
-                <span class="chip-dot offline" id="chip-vm2-dot"></span>
-                <span class="chip-title">VM 2 • PTB-XL</span>
-                <span class="chip-status-badge" id="chip-vm2-status">Offline</span>
-              </div>
-              <div class="chip-metrics">
-                <span class="chip-metric-item">Round: <strong id="chip-vm2-round">R0/50</strong></span>
-                <span class="chip-metric-item">Epoch: <strong id="chip-vm2-epoch">0/3</strong></span>
-                <span class="chip-metric-item">Batch: <strong id="chip-vm2-batch">0/0</strong></span>
-                <span class="chip-metric-item">LR: <strong id="chip-vm2-lr">0.001</strong></span>
-              </div>
-            </div>
-
-            <!-- VM 3 Telemetry -->
-            <div class="node-telemetry-chip" id="chip-vm3">
-              <div class="chip-top">
-                <span class="chip-dot offline" id="chip-vm3-dot"></span>
-                <span class="chip-title">VM 3 • Chapman</span>
-                <span class="chip-status-badge" id="chip-vm3-status">Offline</span>
-              </div>
-              <div class="chip-metrics">
-                <span class="chip-metric-item">Round: <strong id="chip-vm3-round">R0/50</strong></span>
-                <span class="chip-metric-item">Epoch: <strong id="chip-vm3-epoch">0/3</strong></span>
-                <span class="chip-metric-item">Batch: <strong id="chip-vm3-batch">0/0</strong></span>
-                <span class="chip-metric-item">LR: <strong id="chip-vm3-lr">0.001</strong></span>
-              </div>
-            </div>
-
-            <!-- VM 4 Telemetry -->
-            <div class="node-telemetry-chip" id="chip-vm4">
-              <div class="chip-top">
-                <span class="chip-dot offline" id="chip-vm4-dot"></span>
-                <span class="chip-title">VM 4 • G12EC</span>
-                <span class="chip-status-badge" id="chip-vm4-status">Offline</span>
-              </div>
-              <div class="chip-metrics">
-                <span class="chip-metric-item">Round: <strong id="chip-vm4-round">R0/50</strong></span>
-                <span class="chip-metric-item">Epoch: <strong id="chip-vm4-epoch">0/3</strong></span>
-                <span class="chip-metric-item">Batch: <strong id="chip-vm4-batch">0/0</strong></span>
-                <span class="chip-metric-item">LR: <strong id="chip-vm4-lr">0.001</strong></span>
-              </div>
-            </div>
+          <!-- Active Inspect Ribbon (muncul jika user mengklik salah satu run di riwayat) -->
+          <div class="inspect-banner" id="inspectBanner" style="display: none;">
+            <span>Menampilkan data historis run: <strong id="inspectRunId" class="mono">--</strong></span>
+            <button type="button" class="btn-link" id="btnExitInspect">Kembali ke Sesi Terakhir</button>
           </div>
 
           <div class="chart-wrapper">
@@ -449,33 +387,33 @@
         </div>
       </section>
 
-      <!-- MODUL 4: MODEL CHECKPOINT & LOG VIEWER -->
+      <!-- MODUL 4: LOG TERMINAL & DOWNLOAD MODEL -->
       <section class="card" id="cardModelLogs">
         <div class="card-header">
           <div>
             <div class="card-title">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-              Live Terminal Logs
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+              Live Terminal Log
             </div>
-            <div class="card-subtitle">Output proses Flower Server & Klien Federasi</div>
+            <div class="card-subtitle">Output real-time Flower Server & klien federasi</div>
           </div>
-          <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-            <div class="log-tabs">
-              <button class="log-tab-btn active" data-source="server">Server</button>
-              <button class="log-tab-btn" data-source="vm2">VM 2 (PTB-XL)</button>
-              <button class="log-tab-btn" data-source="vm3">VM 3 (Chapman)</button>
-              <button class="log-tab-btn" data-source="vm4">VM 4 (G12EC)</button>
-              <button class="log-tab-btn" data-source="all">Semua Node</button>
+          <div class="header-actions-group">
+            <div class="segmented-control" id="logSourceTabs">
+              <button class="seg-btn active" data-source="server">Server</button>
+              <button class="seg-btn" data-source="vm2">VM 2</button>
+              <button class="seg-btn" data-source="vm3">VM 3</button>
+              <button class="seg-btn" data-source="vm4">VM 4</button>
+              <button class="seg-btn" data-source="all">Semua</button>
             </div>
-            <button class="btn btn-outline" id="btnDownloadModel" style="padding: 0.35rem 0.65rem; font-size: 0.72rem;">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              best_model.pth
+            <button class="btn btn-secondary btn-sm" id="btnDownloadModel" title="Unduh checkpoint model terbaik sesi aktif">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              best.pt
             </button>
           </div>
         </div>
 
-        <div class="card-body" style="padding: 1rem 1.4rem;">
-          <div class="log-stream-box" id="logStreamBox">Menunggu sesi training dimulai...
+        <div class="card-body">
+          <div class="terminal-log-box" id="logStreamBox">Menunggu sesi training dimulai...
 [SERVER] Siap menerima perintah dari Control Panel.</div>
         </div>
       </section>

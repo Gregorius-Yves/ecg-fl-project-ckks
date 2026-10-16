@@ -1,76 +1,89 @@
 ---
 # ==============================================================================
-# PLAYBOOK: Jalankan FL Client Native Python di Seluruh VM Klien (VM 2, 3, 4)
-# Menjalankan src/client.py di latar belakang (background) tanpa Docker
-# Cukup jalankan dari VM Server:
+# PLAYBOOK: Orkestrasi Mulai FL Client Berbasis Docker di VM Klien (VM 2, 3, 4)
+# Menggunakan Docker Container terisolasi dengan Resource Allocation & ShmSize
+# Penggunaan:
 #   ansible-playbook -i inventory.ini start_clients.yml
 # ==============================================================================
 
-- name: Mulai Flower Client di Seluruh Node Klien (Native Python)
+- name: Start Flower Client Containers di Seluruh Worker Node
   hosts: clients
-  become: false
-  vars:
-    user_project_dir: "/home/{{ ansible_user }}/ecg-fl-project"
-    server_addr: "{{ fl_server_ip | default('10.34.100.114') }}:{{ fl_server_port | default(8080) }}"
-    batch_sz: "{{ fl_batch_size | default(128) }}"
+  become: true
   tasks:
-    - name: 1. Tarik pembaruan kode terbaru dari Git secara presisi
-      ansible.builtin.shell: |
-        git config --global --add safe.directory "{{ user_project_dir }}"
-        git fetch origin main
-        git reset --hard origin/main
-      args:
-        chdir: "{{ user_project_dir }}"
+    - name: 1. Pastikan direktori logs dan data tersedia di host
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0775"
+      loop:
+        - "{{ project_root_remote }}/logs"
+        - "{{ data_dir }}"
 
-    - name: 2. Hentikan instance client lama jika sedang berjalan
-      ansible.builtin.shell: |
-        for pid in $(pgrep -f "[c]lient.py"); do
-          if [ "$pid" != "$$" ]; then
-            kill -9 "$pid" 2>/dev/null || true
-          fi
-        done
-        true
-      args:
-        executable: /bin/bash
-      failed_when: false
+    - name: 2. Tarik kode terbaru dari Git (jika use_git_clone=true)
+      ansible.builtin.git:
+        repo: "{{ git_repo_url }}"
+        dest: "{{ project_root_remote }}"
+        version: "{{ git_branch }}"
+        force: true
+      when: use_git_clone | default(true) | bool
 
-    - name: 3. Hapus log lama secara bersih
-      ansible.builtin.shell: |
-        mkdir -p "{{ user_project_dir }}/logs"
-        rm -f "{{ user_project_dir }}/logs/client.log"
-      args:
-        executable: /bin/bash
+    - name: 3. Pastikan Docker Image {{ fl_image_name }} siap di Worker Node
+      community.docker.docker_image:
+        name: "{{ fl_image_name }}"
+        build:
+          path: "{{ project_root_remote }}"
+          dockerfile: Dockerfile
+        source: build
+        force_source: false
 
-    - name: 4. Jalankan Flower Client di background (nohup)
-      ansible.builtin.shell: |
-        if [ -d "venv" ]; then source venv/bin/activate; fi
-        nohup python3 src/client.py \
-          --server {{ server_addr }} \
-          --client_id {{ client_id }} \
-          --dataset {{ dataset_name }} \
-          --batch_size {{ batch_sz }} \
-          > logs/client.log 2>&1 &
-      args:
-        chdir: "{{ user_project_dir }}"
-        executable: /bin/bash
+    - name: 4. Hentikan container client lama jika sedang berjalan
+      community.docker.docker_container:
+        name: "{{ container_name }}"
+        state: absent
+        force_kill: true
 
-    - name: 5. Tunggu inisialisasi dan baca status awal
-      ansible.builtin.shell: |
-        sleep 3
-        pgrep -f "[c]lient.py" | head -n 1
-      args:
-        executable: /bin/bash
-      register: client_pid
+    - name: 5. Jalankan Container FL Client ({{ dataset_label }})
+      community.docker.docker_container:
+        name: "{{ container_name }}"
+        image: "{{ fl_image_name }}"
+        command: ["python", "-m", "src.client"]
+        state: started
+        restart_policy: unless-stopped
+        shm_size: "2gb"
+        network_mode: "host"
+        volumes:
+          - "{{ data_dir }}:/app/data/{{ dataset_name }}:ro"
+          - "{{ project_root_remote }}/logs:/app/logs"
+        env:
+          SERVER_ADDRESS: "{{ fl_server_ip }}:{{ fl_server_port }}"
+          CLIENT_ID: "{{ client_id | string }}"
+          DATASET_NAME: "{{ dataset_name }}"
+          DATA_DIR: "/app/data/{{ dataset_name }}"
+          STRATEGY: "auto"
+          BATCH_SIZE: "{{ fl_batch_size | string }}"
+          LOCAL_EPOCHS: "{{ fl_local_epochs | string }}"
+          LEARNING_RATE: "{{ fl_learning_rate | string }}"
+
+    - name: 6. Tunggu inisialisasi container client
+      ansible.builtin.pause:
+        seconds: 2
+
+    - name: 7. Ambil status container client dari Docker engine
+      ansible.builtin.command: "docker ps --filter name={{ container_name }} --format '{{ '{{' }}.Names{{ '}}' }}: {{ '{{' }}.Status{{ '}}' }} (Image: {{ '{{' }}.Image{{ '}}' }})'"
+      register: docker_client_status
       changed_when: false
 
-    - name: 5b. Ambil log awal eksekusi klien
-      ansible.builtin.shell: "tail -n 10 {{ user_project_dir }}/logs/client.log"
-      register: startup_log
+    - name: 8. Ambil 5 baris log pertama container client
+      ansible.builtin.command: "docker logs --tail 5 {{ container_name }}"
+      register: docker_client_log
       changed_when: false
+      ignore_errors: true
 
-    - name: 6. Tampilkan Konfirmasi Status Klien
+    - name: 9. Laporan Konfirmasi Status Client Docker
       ansible.builtin.debug:
         msg:
-          - "🟢 [{{ inventory_hostname }}] Client '{{ dataset_label }}' (ID: {{ client_id }}) AKTIF (PID: {{ client_pid.stdout | trim }})"
-          - "📄 Log Awal:"
-          - "{{ startup_log.stdout_lines }}"
+          - "🐳 Container: {{ docker_client_status.stdout }}"
+          - "📄 Log Container:"
+          - "{{ docker_client_log.stdout_lines }}"

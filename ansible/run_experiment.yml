@@ -1,104 +1,96 @@
 ---
 # ==============================================================================
-# PLAYBOOK: Jalankan Eksperimen FL Tertentu (FedBN, FedBB, atau FedSOL)
+# PLAYBOOK: Orkestrasi Eksperimen FL Berbasis Docker
+# Mengirim instruksi ke Container fl-dashboard atau menjalankan container server FL
+# Setiap eksperimen menghasilkan run baru di results/runs/<strategi>-<waktu>/ (append-only)
+#
 # Penggunaan:
-#   ansible-playbook -i inventory.ini run_experiment.yml -e "strategy=fedbn rounds=50"
-#   ansible-playbook -i inventory.ini run_experiment.yml -e "strategy=fedbb rounds=50"
-#   ansible-playbook -i inventory.ini run_experiment.yml -e "strategy=fedsol rounds=50"
+#   ansible-playbook -i inventory.ini run_experiment.yml -e "strategy=fedavg rounds=50"
+#   ansible-playbook -i inventory.ini run_experiment.yml -e "strategy=fedprox rounds=50 proximal_mu=0.01"
+#   ansible-playbook -i inventory.ini run_experiment.yml -e "strategy=scaffold rounds=50"
+#   ansible-playbook -i inventory.ini run_experiment.yml -e "strategy=fedbb rounds=50 fedbb_alpha=0.5"
 # ==============================================================================
 
-- name: Validasi Parameter Eksperimen
+- name: "[1/3] Validasi Parameter & Konfigurasi Modular"
   hosts: localhost
   gather_facts: false
   tasks:
-    - name: Cek ketersediaan parameter strategi
+    - name: Parse parameter
       ansible.builtin.set_fact:
-        current_strategy: "{{ strategy | default(fl_strategy) | lower }}"
+        current_strategies: "{{ (strategy | default(fl_strategy) | lower).split(',') | map('trim') | list }}"
         current_rounds: "{{ rounds | default(fl_num_rounds) | int }}"
+        current_prox_mu: "{{ proximal_mu | default(0.01) | float }}"
+        current_bb_alpha: "{{ fedbb_alpha | default(0.5) | float }}"
+        current_sol_mu: "{{ fedsol_mu | default(0.01) | float }}"
 
-    - name: Validasi nama strategi yang didukung
+    - name: Validasi nama strategi
       ansible.builtin.assert:
         that:
-          - current_strategy in ['fedbn', 'fedbb', 'fedsol']
-        fail_msg: "Strategi '{{ current_strategy }}' tidak valid! Pilih: fedbn, fedbb, atau fedsol."
-        success_msg: "Memulai Eksperimen FL dengan Strategi: {{ current_strategy }} ({{ current_rounds }} Rounds)"
+          - item in ['fedavg', 'fedprox', 'scaffold', 'fedbn', 'fedbb', 'fedsol', 'all']
+        fail_msg: "Strategi '{{ item }}' tidak valid! Pilih: fedavg, fedprox, scaffold, fedbn, fedbb, fedsol, all."
+      loop: "{{ current_strategies }}"
 
-- name: Hentikan dan Bersihkan Sesi Sebelumnya di Server & Clients
-  hosts: fl_cluster
-  become: true
-  tasks:
-    - name: Stop container Flower jika sedang berjalan
-      community.docker.docker_container:
-        name: "{{ item }}"
-        state: absent
-        force_kill: true
-      loop:
-        - fl-server
-        - fl-client-ptbxl
-        - fl-client-chapman
-        - fl-client-g12ec
-      ignore_errors: true
 
-- name: Mulai FL Server untuk Eksperimen {{ strategy | default('fedbn') | upper }}
-  hosts: server
-  become: true
-  tasks:
-    - name: Jalankan Server Container
-      community.docker.docker_container:
-        name: fl-server
-        image: "{{ server_image_name }}"
-        state: started
-        restart_policy: "no"
-        ports:
-          - "{{ fl_server_port }}:8080"
-        volumes:
-          - "{{ checkpoints_dir_remote }}:/app/checkpoints"
-          - "{{ logs_dir_remote }}:/app/logs"
-        env:
-          SERVER_HOST: "0.0.0.0"
-          SERVER_PORT: "8080"
-          STRATEGY: "{{ strategy | default(fl_strategy) | lower }}"
-          NUM_ROUNDS: "{{ rounds | default(fl_num_rounds) | string }}"
-          MIN_FIT_CLIENTS: "{{ fl_min_fit_clients | string }}"
-          MIN_AVAILABLE_CLIENTS: "{{ fl_min_available_clients | string }}"
-          CHECKPOINT_DIR: "/app/checkpoints"
-          LOG_DIR: "/app/logs"
-          NUM_CLASSES: "{{ num_classes | string }}"
-
-    - name: Tunggu hingga Server gRPC siap (Port 8080)
-      ansible.builtin.wait_for:
-        host: "{{ fl_server_ip }}"
-        port: "{{ fl_server_port }}"
-        state: started
-        delay: 2
-        timeout: 45
-
-- name: Hubungkan Semua Client (VM 2, 3, 4) ke Server
+- name: "[2/3] Pastikan Container Docker Klien Berjalan"
   hosts: clients
   become: true
   tasks:
-    - name: Jalankan Client Container ({{ dataset_label }})
+    - name: Cek status container client
+      ansible.builtin.command: "docker inspect -f '{{ '{{' }}.State.Running{{ '}}' }}' {{ container_name }}"
+      register: client_inspect
+      failed_when: false
+      changed_when: false
+
+    - name: Nyalakan container client jika belum berjalan
       community.docker.docker_container:
         name: "{{ container_name }}"
-        image: "{{ client_image_name }}"
+        image: "{{ fl_image_name }}"
+        command: ["python", "-m", "src.client"]
         state: started
-        restart_policy: "no"
+        restart_policy: unless-stopped
         shm_size: "2gb"
+        network_mode: "host"
         volumes:
-          - "{{ data_dir }}:/app/data:ro"
-          - "{{ logs_dir_remote }}:/app/logs"
+          - "{{ data_dir }}:/app/data/{{ dataset_name }}:ro"
+          - "{{ project_root_remote }}/logs:/app/logs"
         env:
-          SERVER_ADDRESS: "{{ server_address }}"
+          SERVER_ADDRESS: "{{ fl_server_ip }}:{{ fl_server_port }}"
           CLIENT_ID: "{{ client_id | string }}"
           DATASET_NAME: "{{ dataset_name }}"
-          DATA_DIR: "/app/data"
-          LOG_DIR: "/app/logs"
-          STRATEGY: "{{ strategy | default(fl_strategy) | lower }}"
+          DATA_DIR: "/app/data/{{ dataset_name }}"
+          STRATEGY: "auto"
           BATCH_SIZE: "{{ fl_batch_size | string }}"
           LOCAL_EPOCHS: "{{ fl_local_epochs | string }}"
           LEARNING_RATE: "{{ fl_learning_rate | string }}"
-          NUM_CLASSES: "{{ num_classes | string }}"
+      when: client_inspect.rc != 0 or client_inspect.stdout | trim != 'true'
 
-    - name: Cetak info status peluncuran
+
+- name: "[3/3] Mulai Eksperimen Melalui Container Dashboard Server"
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: POST /api/experiment/start ke Container Dashboard
+      ansible.builtin.uri:
+        url: "http://{{ fl_server_ip }}:{{ fl_dashboard_port }}/api/experiment/start"
+        method: POST
+        body_format: json
+        body:
+          strategy: "{{ current_strategies if current_strategies | length > 1 else current_strategies[0] }}"
+          num_rounds: "{{ current_rounds | int }}"
+          local_epochs: "{{ fl_local_epochs | int }}"
+          learning_rate: "{{ fl_learning_rate | float }}"
+          batch_size: "{{ fl_batch_size | int }}"
+          proximal_mu: "{{ current_prox_mu }}"
+          fedbb_alpha: "{{ current_bb_alpha }}"
+          fedsol_mu: "{{ current_sol_mu }}"
+        status_code: 200
+      register: start_result
+
+    - name: Konfirmasi Eksekusi Eksperimen
       ansible.builtin.debug:
-        msg: "Client {{ dataset_name }} ({{ ansible_host }}) terhubung ke {{ server_address }} untuk strategi {{ strategy | default(fl_strategy) }}!"
+        msg:
+          - "🚀 Eksperimen FL dimulai di container Docker Server!"
+          - "Strategi: {{ current_strategies }}"
+          - "Ronde: {{ current_rounds }}"
+          - "Parameter Modular: proximal_mu={{ current_prox_mu }}, fedbb_alpha={{ current_bb_alpha }}, fedsol_mu={{ current_sol_mu }}"
+          - "Pantau kemajuan real-time di Dashboard: http://{{ fl_server_ip }}:{{ fl_dashboard_port }}"
