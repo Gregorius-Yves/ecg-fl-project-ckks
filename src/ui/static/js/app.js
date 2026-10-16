@@ -114,6 +114,54 @@ function renderModularOptions(strat) {
         Memproyeksikan update gradien ortogonal terhadap ruang representasi model global untuk mencegah kehancuran representasi fitur laten EKG.
       </div>
     `;
+  } else if (strat === 'all') {
+    titleEl.textContent = 'Mode Runtut: Multi-Sesi Otomatis';
+    badgeEl.textContent = 'Sequential Benchmark';
+    bodyEl.innerHTML = `
+      <div style="font-size: 0.68rem; color: #475569; margin-bottom: 0.35rem; font-weight: 600;">
+        Pilih algoritma yang akan dieksekusi secara berurutan:
+      </div>
+      <div class="seq-checklist-grid" id="seqChecklistGrid">
+        <label class="seq-check-item"><input type="checkbox" name="seq_algo" value="fedavg" checked onchange="updateSeqPreview()"> FedAvg</label>
+        <label class="seq-check-item"><input type="checkbox" name="seq_algo" value="fedprox" checked onchange="updateSeqPreview()"> FedProx</label>
+        <label class="seq-check-item"><input type="checkbox" name="seq_algo" value="scaffold" checked onchange="updateSeqPreview()"> SCAFFOLD</label>
+        <label class="seq-check-item"><input type="checkbox" name="seq_algo" value="fedbn" checked onchange="updateSeqPreview()"> FedBN</label>
+        <label class="seq-check-item"><input type="checkbox" name="seq_algo" value="fedbb" checked onchange="updateSeqPreview()"> FedBB</label>
+        <label class="seq-check-item"><input type="checkbox" name="seq_algo" value="fedsol" checked onchange="updateSeqPreview()"> FedSOL</label>
+      </div>
+      <div class="seq-preview-box" id="seqPreviewText">
+        Urutan: FEDAVG ➔ FEDPROX ➔ SCAFFOLD ➔ FEDBN ➔ FEDBB ➔ FEDSOL
+      </div>
+      <div class="modular-row" style="margin-top: 0.5rem;">
+        <div class="modular-field">
+          <label for="inputProximalMu">FedProx &mu;:</label>
+          <input type="number" id="inputProximalMu" name="proximal_mu" step="0.001" min="0.0001" max="1.0" value="0.01">
+        </div>
+        <div class="modular-field">
+          <label for="inputFedbbAlpha">FedBB &alpha;:</label>
+          <input type="number" id="inputFedbbAlpha" name="fedbb_alpha" step="0.05" min="0.0" max="1.0" value="0.5">
+        </div>
+        <div class="modular-field">
+          <label for="inputFedsolMu">FedSOL &mu;:</label>
+          <input type="number" id="inputFedsolMu" name="fedsol_mu" step="0.001" min="0.0001" max="1.0" value="0.01">
+        </div>
+      </div>
+      <div class="modular-desc">
+        Setiap metode akan dijalankan secara otomatis sebanyak ronde yang ditentukan dengan jeda soket 6 detik antar sesi. Setiap sesi disimpan permanen di <code>results/runs/</code>.
+      </div>
+    `;
+  }
+}
+
+function updateSeqPreview() {
+  const checked = Array.from(document.querySelectorAll('input[name="seq_algo"]:checked')).map(cb => cb.value);
+  const previewEl = document.getElementById('seqPreviewText');
+  if (previewEl) {
+    if (checked.length > 0) {
+      previewEl.textContent = 'Urutan: ' + checked.map(c => c.toUpperCase()).join(' ➔ ');
+    } else {
+      previewEl.textContent = 'Urutan: (Belum ada algoritma dipilih)';
+    }
   }
 }
 
@@ -632,6 +680,16 @@ async function startTraining() {
     }
   });
 
+  // Jika mode runtut dipilih, ambil algoritma yang dicentang sesuai urutan
+  if (payload.strategy === 'all') {
+    const checked = Array.from(document.querySelectorAll('input[name="seq_algo"]:checked')).map(cb => cb.value);
+    if (checked.length === 0) {
+      alert('Pilih minimal satu algoritma untuk dijalankan dalam mode runtut!');
+      return;
+    }
+    payload.strategy = checked.join(',');
+  }
+
   const btnStart = document.getElementById('btnStartTraining');
   if (btnStart) btnStart.disabled = true;
 
@@ -761,3 +819,4 @@ document.addEventListener('DOMContentLoaded', () => {
 // Expose globals for inline HTML onclick attributes
 window.inspectHistoricalRun = inspectHistoricalRun;
 window.exitInspect = exitInspect;
+window.updateSeqPreview = updateSeqPreview;
