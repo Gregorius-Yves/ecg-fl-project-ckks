@@ -78,6 +78,18 @@
         state: absent
         force_kill: true
 
+    - name: Pastikan port 8080 dan 8501 di host bebas dari proses native lama
+      ansible.builtin.shell: |
+        fuser -k 8080/tcp 2>/dev/null || true
+        fuser -k 8501/tcp 2>/dev/null || true
+        pkill -9 -f "src.server" 2>/dev/null || true
+        pkill -9 -f "src.ui.server" 2>/dev/null || true
+        sleep 1
+      args:
+        executable: /bin/bash
+      changed_when: false
+      ignore_errors: true
+
     - name: Jalankan container Dashboard + Flower Server
       community.docker.docker_container:
         name: fl-dashboard
