@@ -73,6 +73,15 @@ function initChart() {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      animation: false,
+      animations: false,
+      transitions: {
+        active: {
+          animation: {
+            duration: 0
+          }
+        }
+      },
       plugins: {
         legend: {
           position: 'top',
@@ -148,19 +157,11 @@ function renderMetricChart() {
       if (h.strategies && h.strategies[stratKey] && Array.isArray(h.strategies[stratKey][metricKey]) && h.strategies[stratKey][metricKey].length > 0) {
         return h.strategies[stratKey][metricKey];
       }
-      if (metric === 'f1') {
-        const coeffs = { fedbn: [0.57, 0.28, 0.87], fedbb: [0.54, 0.33, 0.84], fedsol: [0.55, 0.31, 0.86] };
-        const [base, scale, decay] = coeffs[stratKey] || [0.55, 0.30, 0.85];
-        return rounds.map(r => Number((base + (scale * (1 - Math.pow(decay, r)))).toFixed(3)));
-      } else if (metric === 'auroc') {
-        const coeffs = { fedbn: [0.67, 0.24, 0.85], fedbb: [0.65, 0.27, 0.83], fedsol: [0.66, 0.26, 0.84] };
-        const [base, scale, decay] = coeffs[stratKey] || [0.65, 0.25, 0.85];
-        return rounds.map(r => Number((base + (scale * (1 - Math.pow(decay, r)))).toFixed(3)));
-      } else {
-        const coeffs = { fedbn: [0.63, 0.91, 0.14], fedbb: [0.67, 0.89, 0.12], fedsol: [0.65, 0.90, 0.13] };
-        const [base, decay, minVal] = coeffs[stratKey] || [0.65, 0.91, 0.13];
-        return rounds.map(r => Number((base * Math.pow(decay, r) + minVal).toFixed(4)));
+      if (stratKey === 'fedbn' && Array.isArray(h[metricKey]) && h[metricKey].length > 0) {
+        return h[metricKey];
       }
+      // Strategi belum dijalankan: jangan gambar plot palsu
+      return [];
     };
 
     metricChart.data.datasets = [
@@ -170,7 +171,7 @@ function renderMetricChart() {
         borderColor: '#d97706',
         backgroundColor: 'rgba(217, 119, 6, 0.08)',
         borderWidth: 2.8,
-        tension: 0.3,
+        tension: 0.1,
         fill: true,
         pointRadius: 3
       },
@@ -180,7 +181,7 @@ function renderMetricChart() {
         borderColor: '#0d9488',
         backgroundColor: 'rgba(13, 148, 136, 0.08)',
         borderWidth: 2.8,
-        tension: 0.3,
+        tension: 0.1,
         fill: false,
         pointRadius: 3
       },
@@ -190,7 +191,7 @@ function renderMetricChart() {
         borderColor: '#2563eb',
         backgroundColor: 'rgba(37, 99, 235, 0.08)',
         borderWidth: 2.8,
-        tension: 0.3,
+        tension: 0.1,
         fill: false,
         pointRadius: 3
       }
@@ -209,11 +210,16 @@ function renderMetricChart() {
       fedsol: { name: 'FedSOL', color: '#0d9488', bg: 'rgba(13, 148, 136, 0.08)', sub: 'Evaluasi Per-VM: FedSOL (Orthogonal Subspace • Mitigasi Client Drift)' }
     }[stratKey];
 
-    if (subtitleEl) subtitleEl.textContent = stratMeta.sub;
+    const hasData = (h.strategies && h.strategies[stratKey]) || (stratKey === 'fedbn' && h.loss && h.loss.length > 0);
+    if (!hasData) {
+      if (subtitleEl) subtitleEl.textContent = `${stratMeta.sub} • (Belum Dijalankan)`;
+    } else {
+      if (subtitleEl) subtitleEl.textContent = stratMeta.sub;
+    }
 
     const getPerVmSeries = (nodeKey) => {
       const metricKey = (metricName === 'f1') ? 'f1_macro' : metricName;
-      // 1. Cek dari response server live (jika ada)
+      // 1. Cek dari response server live
       if (h.strategies && h.strategies[stratKey] && h.strategies[stratKey][nodeKey] && Array.isArray(h.strategies[stratKey][nodeKey][metricKey]) && h.strategies[stratKey][nodeKey][metricKey].length > 0) {
         return h.strategies[stratKey][nodeKey][metricKey];
       }
@@ -223,78 +229,12 @@ function renderMetricChart() {
       if (stratKey === 'fedbn' && nodeKey !== 'global' && h[nodeKey] && Array.isArray(h[nodeKey][metricKey]) && h[nodeKey][metricKey].length > 0) {
         return h[nodeKey][metricKey];
       }
-
-      // 2. Fallback kurva realistis spesifik tiap node & strategi
-      const fallbackModels = {
-        f1: {
-          fedbn: {
-            global: [0.57, 0.28, 0.87],
-            ptbxl: [0.58, 0.29, 0.86],    // Unggul di feature shift Schiller
-            chapman: [0.53, 0.29, 0.88],
-            g12ec: [0.54, 0.29, 0.87]
-          },
-          fedbb: {
-            global: [0.54, 0.33, 0.84],
-            ptbxl: [0.55, 0.30, 0.86],
-            chapman: [0.56, 0.33, 0.82],  // Unggul di diagnosis kelas langka Chapman
-            g12ec: [0.53, 0.32, 0.85]
-          },
-          fedsol: {
-            global: [0.55, 0.31, 0.86],
-            ptbxl: [0.56, 0.29, 0.87],
-            chapman: [0.54, 0.31, 0.86],
-            g12ec: [0.56, 0.32, 0.83]     // Unggul di duration skew & drift G12EC
-          }
-        },
-        auroc: {
-          fedbn: {
-            global: [0.67, 0.24, 0.85],
-            ptbxl: [0.68, 0.25, 0.84],
-            chapman: [0.64, 0.25, 0.86],
-            g12ec: [0.65, 0.25, 0.85]
-          },
-          fedbb: {
-            global: [0.65, 0.27, 0.83],
-            ptbxl: [0.66, 0.25, 0.85],
-            chapman: [0.67, 0.27, 0.81],
-            g12ec: [0.64, 0.27, 0.84]
-          },
-          fedsol: {
-            global: [0.66, 0.26, 0.84],
-            ptbxl: [0.67, 0.24, 0.85],
-            chapman: [0.65, 0.26, 0.84],
-            g12ec: [0.67, 0.26, 0.82]
-          }
-        },
-        loss: {
-          fedbn: {
-            global: [0.63, 0.91, 0.14],
-            ptbxl: [0.61, 0.91, 0.12],
-            chapman: [0.65, 0.92, 0.15],
-            g12ec: [0.64, 0.91, 0.15]
-          },
-          fedbb: {
-            global: [0.67, 0.89, 0.12],
-            ptbxl: [0.66, 0.90, 0.13],
-            chapman: [0.64, 0.88, 0.11],
-            g12ec: [0.68, 0.89, 0.13]
-          },
-          fedsol: {
-            global: [0.65, 0.90, 0.13],
-            ptbxl: [0.64, 0.91, 0.13],
-            chapman: [0.66, 0.90, 0.14],
-            g12ec: [0.63, 0.89, 0.12]
-          }
-        }
-      };
-
-      if (metricName === 'loss') {
-        const [base, decay, minVal] = (fallbackModels.loss[stratKey] && fallbackModels.loss[stratKey][nodeKey]) || [0.65, 0.91, 0.13];
-        return rounds.map(r => Number((base * Math.pow(decay, r) + minVal).toFixed(4)));
-      } else {
-        const [base, scale, decay] = (fallbackModels[metricName][stratKey] && fallbackModels[metricName][stratKey][nodeKey]) || [0.55, 0.30, 0.85];
-        return rounds.map(r => Number((base + (scale * (1 - Math.pow(decay, r)))).toFixed(3)));
+      if (stratKey === 'fedbn' && nodeKey === 'global' && Array.isArray(h[metricKey]) && h[metricKey].length > 0) {
+        return h[metricKey];
       }
+
+      // Strategi belum dijalankan: jangan buat kurva tiruan
+      return [];
     };
 
     metricChart.data.datasets = [
@@ -304,7 +244,7 @@ function renderMetricChart() {
         borderColor: stratMeta.color,
         backgroundColor: stratMeta.bg,
         borderWidth: 2.8,
-        tension: 0.3,
+        tension: 0.1,
         fill: true,
         pointRadius: 3
       },
@@ -315,7 +255,7 @@ function renderMetricChart() {
         backgroundColor: 'transparent',
         borderWidth: 2,
         borderDash: [3, 3],
-        tension: 0.3,
+        tension: 0.1,
         pointRadius: 2.5
       },
       {
@@ -325,7 +265,7 @@ function renderMetricChart() {
         backgroundColor: 'transparent',
         borderWidth: 2,
         borderDash: [5, 3],
-        tension: 0.3,
+        tension: 0.1,
         pointRadius: 2.5
       },
       {
@@ -335,14 +275,14 @@ function renderMetricChart() {
         backgroundColor: 'transparent',
         borderWidth: 2,
         borderDash: [6, 4],
-        tension: 0.3,
+        tension: 0.1,
         pointRadius: 2.5
       }
     ];
   }
 
   metricChart.options.scales.y.title.text = yAxisTitle;
-  metricChart.update();
+  metricChart.update('none');
 }
 
 // UI Event Handlers
@@ -754,8 +694,17 @@ async function pollBackend() {
 
       // Update metrics if available
       if (data.metrics && data.metrics.rounds && data.metrics.rounds.length > 0) {
+        const prevRoundsCount = (appState.metricsHistory && appState.metricsHistory.rounds) ? appState.metricsHistory.rounds.length : 0;
+        const newRoundsCount = data.metrics.rounds.length;
+        const stratChanged = (data.strategy || 'fedbn') !== (appState.activeStrategy || 'fedbn');
+
         appState.metricsHistory = data.metrics;
-        switchMetricTab(appState.activeMetric);
+        appState.activeStrategy = data.strategy || 'fedbn';
+
+        // Hanya update chart jika ada ronde baru atau strategi berganti (mencegah animasi naik-turun tiap detik)
+        if (newRoundsCount !== prevRoundsCount || stratChanged) {
+          renderMetricChart();
+        }
       }
     }
   } catch (err) {
