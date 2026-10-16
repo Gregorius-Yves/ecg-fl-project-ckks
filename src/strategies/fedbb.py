@@ -87,14 +87,23 @@ class FedBBStrategy(FedAvg):
         norm_weights = [w / sum_weights for w in client_weights]
 
         # Agregasi terbobot
+        # Akumulasi dalam float64 (layer integer, mis. num_batches_tracked BN,
+        # tidak bisa menerima hasil float secara in-place)
+        orig_dtypes = [param.dtype for param in client_ndarrays[0]]
         weighted_weights: NDArrays = [
-            np.zeros_like(param) for param in client_ndarrays[0]
+            np.zeros(param.shape, dtype=np.float64) for param in client_ndarrays[0]
         ]
 
         for client_idx, ndarrs in enumerate(client_ndarrays):
             w = norm_weights[client_idx]
             for i, layer in enumerate(ndarrs):
-                weighted_weights[i] += layer * w
+                weighted_weights[i] += layer.astype(np.float64) * w
+
+        # Kembalikan ke dtype asli (dibulatkan untuk tipe integer)
+        weighted_weights = [
+            np.rint(arr).astype(dt) if np.issubdtype(dt, np.integer) else arr.astype(dt)
+            for arr, dt in zip(weighted_weights, orig_dtypes)
+        ]
 
         metrics = {"strategy": "fedbb", "aggregated_round": server_round}
         return ndarrays_to_parameters(weighted_weights), metrics
