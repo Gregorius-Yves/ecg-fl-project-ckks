@@ -48,7 +48,7 @@
         command: ["python", "-m", "src.client"]
         state: started
         restart_policy: unless-stopped
-        shm_size: "2gb"
+        shm_size: "2G"
         network_mode: "host"
         volumes:
           - "{{ data_dir }}:/app/data/{{ dataset_name }}:ro"

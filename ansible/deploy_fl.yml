@@ -139,7 +139,7 @@
           path: "{{ project_root_remote }}"
           dockerfile: Dockerfile
         source: build
-        force_source: true
+        force_source: false
 
     - name: Hentikan container client lama (jika berjalan)
       community.docker.docker_container:
@@ -154,7 +154,8 @@
         command: ["python", "-m", "src.client"]
         state: started
         restart_policy: unless-stopped
-        shm_size: "2gb"
+        shm_size: "2G"
+        network_mode: "host"
         volumes:
           - "{{ data_dir }}:/app/data/{{ dataset_name }}:ro"
           - "{{ logs_dir_remote }}:/app/logs"
