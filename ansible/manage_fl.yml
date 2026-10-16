@@ -100,10 +100,35 @@
       when: target_action == 'stop' and 'clients' in group_names
       ignore_errors: true
 
-    - name: "[Stop] Konfirmasi penghentian selesai"
+    # -------------------------------------------------------------
+    # ACTION: CLEANUP_HOST (Hapus semua proses python lama di host di luar Docker & Bersihkan RAM)
+    # -------------------------------------------------------------
+    - name: "[Cleanup Host] Bunuh sisa proses python native milik user di host (bukan Docker root)"
+      ansible.builtin.shell: |
+        pkill -9 -u {{ ansible_user }} -f python 2>/dev/null || true
+        pkill -9 -u {{ ansible_user }} -f python3 2>/dev/null || true
+        pkill -9 -f "src\." 2>/dev/null || true
+        sync
+        echo 3 > /proc/sys/vm/drop_caches
+      args:
+        executable: /bin/bash
+      when: target_action == 'cleanup_host'
+      changed_when: false
+      ignore_errors: true
+
+    - name: "[Cleanup Host] Tampilkan status RAM setelah dibersihkan"
+      ansible.builtin.shell: free -h
+      register: free_ram_output
+      when: target_action == 'cleanup_host'
+      changed_when: false
+
+    - name: "[Cleanup Host] Hasil pembebasan memori"
       ansible.builtin.debug:
-        msg: "Container pada node {{ inventory_hostname }} berhasil dihentikan."
-      when: target_action == 'stop'
+        msg: |
+          === RAM Node: {{ inventory_hostname }} ({{ ansible_host }}) ===
+          {{ free_ram_output.stdout }}
+      when: target_action == 'cleanup_host'
+
 
 
 - name: "[Fetch Results] Download Hasil (results/runs) dari VM 1 ke Mesin Lokal"
