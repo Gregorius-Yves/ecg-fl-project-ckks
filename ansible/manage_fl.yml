@@ -19,13 +19,13 @@
     # -------------------------------------------------------------
     # ACTION: STATUS
     # -------------------------------------------------------------
-    - name: [Status] Cek status Docker containers di host
+    - name: "[Status] Cek status Docker containers di host"
       ansible.builtin.command: docker ps -a --format "table {{ '{{' }}.Names{{ '}}' }}\t{{ '{{' }}.Status{{ '}}' }}\t{{ '{{' }}.Ports{{ '}}' }}"
       register: container_status_output
       when: target_action == 'status'
       changed_when: false
 
-    - name: [Status] Tampilkan status container
+    - name: "[Status] Tampilkan status container"
       ansible.builtin.debug:
         msg: |
           === NODE: {{ inventory_hostname }} ({{ ansible_host }}) ===
@@ -35,7 +35,7 @@
     # -------------------------------------------------------------
     # ACTION: STOP
     # -------------------------------------------------------------
-    - name: [Stop] Hentikan semua container FL di server
+    - name: "[Stop] Hentikan semua container FL di server"
       community.docker.docker_container:
         name: "{{ item }}"
         state: absent
@@ -45,7 +45,7 @@
       when: target_action == 'stop' and 'server' in group_names
       ignore_errors: true
 
-    - name: [Stop] Hentikan container FL di client
+    - name: "[Stop] Hentikan container FL di client"
       community.docker.docker_container:
         name: "{{ container_name }}"
         state: absent
@@ -53,7 +53,7 @@
       when: target_action == 'stop' and 'clients' in group_names
       ignore_errors: true
 
-    - name: [Stop] Konfirmasi penghentian selesai
+    - name: "[Stop] Konfirmasi penghentian selesai"
       ansible.builtin.debug:
         msg: "Container pada node {{ inventory_hostname }} berhasil dihentikan."
       when: target_action == 'stop'
@@ -61,7 +61,7 @@
     # -------------------------------------------------------------
     # ACTION: RESTART DASHBOARD
     # -------------------------------------------------------------
-    - name: [Restart Dashboard] Restart container Streamlit Dashboard
+    - name: "[Restart Dashboard] Restart container Streamlit Dashboard"
       community.docker.docker_container:
         name: fl-dashboard
         state: started
@@ -69,7 +69,7 @@
       when: target_action == 'restart_dashboard' and 'server' in group_names
 
 
-- name: [Fetch Results] Download Hasil Checkpoints & Logs dari VM 1 ke Local Dev
+- name: "[Fetch Results] Download Hasil Checkpoints & Logs dari VM 1 ke Local Dev"
   hosts: server
   become: true
   gather_facts: false
