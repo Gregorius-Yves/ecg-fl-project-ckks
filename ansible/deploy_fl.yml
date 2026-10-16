@@ -7,7 +7,26 @@
   hosts: fl_cluster
   become: true
   tasks:
-    - name: Buat direktori kerja proyek dan logging di remote node
+    - name: Cek apakah direktori proyek sudah merupakan repositori Git
+      ansible.builtin.stat:
+        path: "{{ project_root_remote }}/.git"
+      register: git_repo_stat
+
+    - name: Bersihkan folder yang belum menjadi git repo agar clone berhasil
+      ansible.builtin.file:
+        path: "{{ project_root_remote }}"
+        state: absent
+      when: use_git_clone | bool and not git_repo_stat.stat.exists
+
+    - name: Clone atau pull kode terbaru dari Git repository (jika use_git_clone=true)
+      ansible.builtin.git:
+        repo: "{{ git_repo_url }}"
+        dest: "{{ project_root_remote }}"
+        version: "{{ git_branch }}"
+        force: true
+      when: use_git_clone | bool
+
+    - name: Buat direktori kerja proyek, results permanen, dan logging di remote node
       ansible.builtin.file:
         path: "{{ item }}"
         state: directory
@@ -18,14 +37,6 @@
         - "{{ project_root_remote }}"
         - "{{ results_dir_remote }}"
         - "{{ logs_dir_remote }}"
-
-    - name: Clone atau pull kode terbaru dari Git repository (jika use_git_clone=true)
-      ansible.builtin.git:
-        repo: "{{ git_repo_url }}"
-        dest: "{{ project_root_remote }}"
-        version: "{{ git_branch }}"
-        force: true
-      when: use_git_clone | bool
 
     - name: Sinkronisasi kode lokal ke remote VM menggunakan rsync (jika use_git_clone=false)
       ansible.posix.synchronize:
