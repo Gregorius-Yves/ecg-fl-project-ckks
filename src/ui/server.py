@@ -829,13 +829,20 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
             return
 
         # Static file routing
-        if self.path.startswith("/static/"):
-            rel_path = self.path[len("/static/"):]
-            full_path = os.path.join(STATIC_DIR, rel_path)
+        if self.path.startswith("/static/") or self.path == "/" or self.path == "/index.html":
+            if self.path in ("/", "/index.html"):
+                full_path = os.path.join(STATIC_DIR, "index.html")
+            else:
+                rel_path = self.path[len("/static/"):].split("?")[0]
+                full_path = os.path.join(STATIC_DIR, rel_path)
+
             if os.path.exists(full_path) and os.path.isfile(full_path):
                 self.send_response(200)
                 content_type, _ = mimetypes.guess_type(full_path)
                 self.send_header("Content-Type", content_type or "application/octet-stream")
+                self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+                self.send_header("Pragma", "no-cache")
+                self.send_header("Expires", "0")
                 self.end_headers()
                 with open(full_path, "rb") as f:
                     self.wfile.write(f.read())

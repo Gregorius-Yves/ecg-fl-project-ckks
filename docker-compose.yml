@@ -30,6 +30,7 @@ x-client: &client
   volumes:
     - ${DATA_DIR_HOST:-./data}:/app/data:ro
     - ./logs:/app/logs
+    - ./src:/app/src
   environment: &client-env
     SERVER_ADDRESS: ${SERVER_ADDRESS:-dashboard:8080}
     STRATEGY: auto
@@ -53,6 +54,7 @@ services:
     volumes:
       - ./results:/app/results     # hasil permanen (append-only)
       - ./logs:/app/logs
+      - ./src:/app/src
     environment:
       HOST: 0.0.0.0
       PORT: 8501

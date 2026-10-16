@@ -103,6 +103,7 @@
         volumes:
           - "{{ results_dir_remote }}:/app/results"
           - "{{ logs_dir_remote }}:/app/logs"
+          - "{{ project_root_remote }}/src:/app/src"
         env:
           HOST: "0.0.0.0"
           PORT: "8501"
@@ -159,6 +160,7 @@
         volumes:
           - "{{ data_dir }}:/app/data/{{ dataset_name }}:ro"
           - "{{ logs_dir_remote }}:/app/logs"
+          - "{{ project_root_remote }}/src:/app/src"
         env:
           SERVER_ADDRESS: "{{ server_address }}"
           CLIENT_ID: "{{ client_id | string }}"
