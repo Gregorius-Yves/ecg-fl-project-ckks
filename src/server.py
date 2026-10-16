@@ -151,13 +151,26 @@ def main():
 
     server_address = f"{args.host}:{args.port}"
 
-    if args.strategy.lower() == "all":
-        print(f"🚀 [BENCHMARK SEMUA STRATEGI] Menjalankan 3 Algoritma Berturutan:")
-        print(f"   1. FedBN -> 2. FedBB -> 3. FedSOL (Masing-masing {args.rounds} Rounds)")
+    # Dukungan urutan kustom: misal "fedbb,fedsol,fedbn" atau "all"
+    if "," in args.strategy:
+        strategies = [s.strip().lower() for s in args.strategy.split(",") if s.strip()]
+    elif args.strategy.lower() == "all":
         strategies = ["fedbn", "fedbb", "fedsol"]
-        for s in strategies:
+    else:
+        strategies = None
+
+    if strategies:
+        import time
+        strat_names = " -> ".join([s.upper() for s in strategies])
+        print(f"\n🚀 [BENCHMARK MULTI-STRATEGI] Menjalankan {len(strategies)} Algoritma Sesuai Urutan:")
+        print(f"   Urutan Eksekusi: {strat_names} (Masing-masing {args.rounds} Rounds)")
+        for idx, s in enumerate(strategies):
             run_single_strategy(s, args.rounds, server_address, args.min_clients)
-        print("🎉 SELURUH BENCHMARK KOMPARATIF SELESAI (FedBN + FedBB + FedSOL)!")
+            if idx < len(strategies) - 1:
+                next_strat = strategies[idx + 1]
+                print(f"\n⏸️ Menunggu 6 detik untuk pelepasan socket gRPC sebelum memulai {next_strat.upper()}...", flush=True)
+                time.sleep(6)
+        print(f"🎉 SELURUH EKSPERIMEN ({strat_names}) SELESAI!\n")
     else:
         run_single_strategy(args.strategy, args.rounds, server_address, args.min_clients)
 

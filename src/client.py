@@ -108,7 +108,10 @@ class HeartbeatThread(threading.Thread):
                     "detail": getattr(self.client, "current_detail", "Online"),
                     "current_round": getattr(self.client, "current_round", 0),
                     "epoch": getattr(self.client, "current_epoch", 0),
+                    "total_epochs": getattr(self.client, "total_epochs", 3),
                     "batch": getattr(self.client, "current_batch", 0),
+                    "total_batches": getattr(self.client, "total_batches", 0),
+                    "learning_rate": getattr(self.client, "current_lr", getattr(self.client, "lr", 0.001)),
                     "measured_duration": getattr(self.client, "last_round_duration", 0),
                     "elapsed_in_round": round(time.time() - getattr(self.client, "current_round_start_time", time.time()), 1) if getattr(self.client, "current_status", "") == "training" else 0,
                     "logs": "".join(recent_logs)
@@ -170,6 +173,24 @@ class ECGFlowerClient(fl.client.NumPyClient):
         self.data_dir = os.environ.get("DATA_DIR", f"data/{self.dataset_name}")
         self._init_dataloader()
 
+    def reset_state(self):
+        """Reset state internal klien (strategi, model lokal, optimizer) antar sesi strategi."""
+        self.strategy = "auto"
+        self.current_round = 0
+        self.current_epoch = 0
+        self.current_batch = 0
+        self.current_round_start_time = 0.0
+        self.last_round_duration = 0.0
+        self.current_status = "online"
+        self.current_detail = "Online (Standby)"
+        # Reset model lokal ke bobot awal yang baru dan bersih
+        self.model = ResNet1D(in_channels=12, num_classes=27).to(self.device)
+        self.global_model = copy.deepcopy(self.model)
+        self.criterion = nn.BCEWithLogitsLoss()
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
+        if hasattr(self, "fedsol_opt"):
+            delattr(self, "fedsol_opt")
+
     def _init_dataloader(self):
         from src.preprocessing.dataset import ECGDataset
         real_dataset = ECGDataset(data_dir=self.data_dir, dataset_name=self.dataset_name)
@@ -208,12 +229,13 @@ class ECGFlowerClient(fl.client.NumPyClient):
     def set_parameters(self, parameters):
         """Pasang parameter global dari server ke model lokal"""
         state_dict = self.model.state_dict()
-        if self.strategy == "fedbn":
-            # FedBN: Hanya update layer non-BN
-            non_bn_keys = [k for k in state_dict.keys() if not is_batchnorm_param(k)]
+        non_bn_keys = [k for k in state_dict.keys() if not is_batchnorm_param(k)]
+        if len(parameters) == len(non_bn_keys):
+            # Server mengirim parameter parsial tanpa BN (Skema FedBN)
             for k, param in zip(non_bn_keys, parameters):
                 state_dict[k] = torch.from_numpy(np.ascontiguousarray(param)).to(self.device)
         else:
+            # Server mengirim parameter lengkap (Skema FedBB / FedSOL / FedAvg)
             for k, param in zip(state_dict.keys(), parameters):
                 state_dict[k] = torch.from_numpy(np.ascontiguousarray(param)).to(self.device)
         self.model.load_state_dict(state_dict)
@@ -235,10 +257,15 @@ class ECGFlowerClient(fl.client.NumPyClient):
         self.current_round_start_time = t_round_start
         self.strategy = server_strategy
         self.current_round = server_round
+        self.total_epochs = epochs
+        self.current_lr = float(config.get("lr", self.lr))
+        self.total_batches = len(self.train_loader)
+        self.current_epoch = 1
+        self.current_batch = 0
         self.current_status = "training"
         self.current_detail = f"Ronde {server_round} (Memulai)"
-        print(f"\n📢 [ROUND {server_round}] Instruksi dari Server: Menjalankan Strategi '{self.strategy.upper()}' ({epochs} epoch)")
-        self.log_history.append(f"📢 [ROUND {server_round}] Strategi '{self.strategy.upper()}' ({epochs} epoch)")
+        print(f"\n📢 [ROUND {server_round}] Instruksi dari Server: Menjalankan Strategi '{self.strategy.upper()}' ({epochs} epoch, lr={self.current_lr})")
+        self.log_history.append(f"📢 [ROUND {server_round}] Strategi '{self.strategy.upper()}' ({epochs} epoch, lr={self.current_lr})")
 
         # Sesuaikan Loss Function & Optimizer sesuai perintah Server
         if self.strategy == "fedbb":
@@ -359,24 +386,14 @@ def main():
         try:
             print("⏳ Menghubungkan ke Flower Server...", flush=True)
             fl.client.start_numpy_client(server_address=args.server, client=client)
-            client.current_status = "online"
-            client.current_detail = "Online (Standby)"
-            client.current_round = 0
-            client.current_epoch = 0
-            client.current_batch = 0
-            client.current_round_start_time = 0.0
-            print("🏁 Sesi eksperimen selesai. Standby menunggu ronde/strategi berikutnya...", flush=True)
+            client.reset_state()
+            print("🏁 Sesi eksperimen selesai. Model lokal di-reset ke 'auto'. Standby menunggu ronde/strategi berikutnya...", flush=True)
             time.sleep(3)
         except KeyboardInterrupt:
             print("\n🛑 Klien dihentikan oleh pengguna.")
             break
         except Exception as e:
-            client.current_status = "online"
-            client.current_detail = "Online (Standby)"
-            client.current_round = 0
-            client.current_epoch = 0
-            client.current_batch = 0
-            client.current_round_start_time = 0.0
+            client.reset_state()
             print(f"⚠️ Terputus dari server ({e}). Mencoba menyambung kembali dalam 5 detik...", flush=True)
             time.sleep(5)
 

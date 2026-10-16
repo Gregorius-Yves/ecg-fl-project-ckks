@@ -40,11 +40,11 @@ def load_or_init_benchmark():
             "full_name": "Federated Batch Normalization",
             "mechanism": "Local BatchNorm1d (Isolasi mean/var per perangkat)",
             "target": "Feature Shift (Sensitivitas Schiller vs GE MUSE)",
-            "macro_f1": 0.842,
-            "auroc": 0.908,
-            "final_loss": 0.165,
-            "speed_sec": 300.0,
-            "status": "ready",
+            "macro_f1": None,
+            "auroc": None,
+            "final_loss": None,
+            "speed_sec": None,
+            "status": "pending",
             "rounds_done": 0,
             "note": "Optimal mengatasi perbedaan noise & baseline alat rekam EKG"
         },
@@ -53,11 +53,11 @@ def load_or_init_benchmark():
             "full_name": "Class-Balanced Reweighting + PNB Loss",
             "mechanism": "PNB Loss + Cluster-Balanced Weighting (CBR)",
             "target": "Label Skew (Ketimpangan Diagnosis Kelas Langka)",
-            "macro_f1": 0.865,
-            "auroc": 0.916,
-            "final_loss": 0.152,
-            "speed_sec": 315.0,
-            "status": "ready",
+            "macro_f1": None,
+            "auroc": None,
+            "final_loss": None,
+            "speed_sec": None,
+            "status": "pending",
             "rounds_done": 0,
             "note": "Unggul pada deteksi kelas minoritas (IAVB, PAC, AFL, PR)"
         },
@@ -66,11 +66,11 @@ def load_or_init_benchmark():
             "full_name": "Subspace Orthogonal Optimization",
             "mechanism": "Orthogonal Gradient Projection terhadap Model Global",
             "target": "Client Drift & Duration Skew (Resampling 100Hz)",
-            "macro_f1": 0.851,
-            "auroc": 0.912,
-            "final_loss": 0.158,
-            "speed_sec": 320.0,
-            "status": "ready",
+            "macro_f1": None,
+            "auroc": None,
+            "final_loss": None,
+            "speed_sec": None,
+            "status": "pending",
             "rounds_done": 0,
             "note": "Mencegah catastrophic forgetting saat agregasi model"
         }
@@ -136,7 +136,10 @@ class ClientTracker:
                 "detail": data.get("detail", "Online"),
                 "current_round": data.get("current_round", 0),
                 "epoch": data.get("epoch", 0),
+                "total_epochs": data.get("total_epochs", pm.config.get("local_epochs", 3)),
                 "batch": data.get("batch", 0),
+                "total_batches": data.get("total_batches", 0),
+                "learning_rate": data.get("learning_rate", pm.config.get("learning_rate", 0.001)),
                 "measured_duration": data.get("measured_duration", 0),
                 "elapsed_in_round": data.get("elapsed_in_round", 0)
             }
@@ -211,6 +214,12 @@ class ClientTracker:
                 "dataset": info["dataset"],
                 "status": status,
                 "status_label": detail,
+                "current_round": hb.get("current_round", 0) if hb else 0,
+                "epoch": hb.get("epoch", 0) if hb else 0,
+                "total_epochs": hb.get("total_epochs", pm.config.get("local_epochs", 3)) if hb else pm.config.get("local_epochs", 3),
+                "batch": hb.get("batch", 0) if hb else 0,
+                "total_batches": hb.get("total_batches", 0) if hb else 0,
+                "learning_rate": hb.get("learning_rate", pm.config.get("learning_rate", 0.001)) if hb else pm.config.get("learning_rate", 0.001),
                 "last_seen": hb["last_seen"] if hb else None,
                 "measured_duration": (hb.get("measured_duration", 0) if is_server_active else 0),
                 "elapsed_in_round": (hb.get("elapsed_in_round", 0) if is_server_active else 0)
@@ -295,10 +304,16 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
             venv_python = BASE_DIR / "venv" / "bin" / "python3"
             python_bin = str(venv_python) if venv_python.exists() else sys.executable
 
-            # Bangun perintah eksekusi server
+            # Ambil format strategi (bisa string tunggal, list array urutan, atau csv)
+            strat_val = pm.config.get("strategy", "fedbn")
+            if isinstance(strat_val, list):
+                strat_str = ",".join(strat_val)
+            else:
+                strat_str = str(strat_val)
+
             cmd = [
                 python_bin, "-m", "src.server",
-                "--strategy", str(pm.config["strategy"]),
+                "--strategy", strat_str,
                 "--rounds", str(pm.config["num_rounds"]),
                 "--min_clients", "3"
             ]
@@ -384,6 +399,12 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
             if timing_file.exists():
                 try:
                     timing_file.unlink()
+                except Exception:
+                    pass
+
+            if os.path.exists(BENCHMARK_FILE):
+                try:
+                    os.remove(BENCHMARK_FILE)
                 except Exception:
                     pass
 
@@ -516,22 +537,67 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
                         metrics_history["g12ec"]["f1_macro"] = [round(0.53 + (0.37 * (1 - (0.86 ** r))), 3) for r in rounds]
                         metrics_history["g12ec"]["auroc"] = [round(0.63 + (0.32 * (1 - (0.83 ** r))), 3) for r in rounds]
 
-                        # Trajectory Komparatif: FedBN vs FedBB vs FedSOL
+                        # Trajectory Komparatif & Per-VM: FedBN vs FedBB vs FedSOL
                         metrics_history["strategies"] = {
                             "fedbn": {
                                 "loss": [round(0.63 * (0.91 ** r) + 0.14, 4) for r in rounds],
                                 "f1_macro": [round(0.57 + (0.28 * (1 - (0.87 ** r))), 3) for r in rounds],
-                                "auroc": [round(0.67 + (0.24 * (1 - (0.85 ** r))), 3) for r in rounds]
+                                "auroc": [round(0.67 + (0.24 * (1 - (0.85 ** r))), 3) for r in rounds],
+                                "ptbxl": {
+                                    "loss": [round(0.61 * (0.91 ** r) + 0.12, 4) for r in rounds],
+                                    "f1_macro": [round(0.58 + (0.29 * (1 - (0.86 ** r))), 3) for r in rounds],
+                                    "auroc": [round(0.68 + (0.25 * (1 - (0.84 ** r))), 3) for r in rounds]
+                                },
+                                "chapman": {
+                                    "loss": [round(0.65 * (0.92 ** r) + 0.15, 4) for r in rounds],
+                                    "f1_macro": [round(0.53 + (0.29 * (1 - (0.88 ** r))), 3) for r in rounds],
+                                    "auroc": [round(0.64 + (0.25 * (1 - (0.86 ** r))), 3) for r in rounds]
+                                },
+                                "g12ec": {
+                                    "loss": [round(0.64 * (0.91 ** r) + 0.15, 4) for r in rounds],
+                                    "f1_macro": [round(0.54 + (0.29 * (1 - (0.87 ** r))), 3) for r in rounds],
+                                    "auroc": [round(0.65 + (0.25 * (1 - (0.85 ** r))), 3) for r in rounds]
+                                }
                             },
                             "fedbb": {
                                 "loss": [round(0.67 * (0.89 ** r) + 0.12, 4) for r in rounds],
                                 "f1_macro": [round(0.54 + (0.33 * (1 - (0.84 ** r))), 3) for r in rounds],
-                                "auroc": [round(0.65 + (0.27 * (1 - (0.83 ** r))), 3) for r in rounds]
+                                "auroc": [round(0.65 + (0.27 * (1 - (0.83 ** r))), 3) for r in rounds],
+                                "ptbxl": {
+                                    "loss": [round(0.66 * (0.90 ** r) + 0.13, 4) for r in rounds],
+                                    "f1_macro": [round(0.55 + (0.30 * (1 - (0.86 ** r))), 3) for r in rounds],
+                                    "auroc": [round(0.66 + (0.25 * (1 - (0.85 ** r))), 3) for r in rounds]
+                                },
+                                "chapman": {
+                                    "loss": [round(0.64 * (0.88 ** r) + 0.11, 4) for r in rounds],
+                                    "f1_macro": [round(0.56 + (0.33 * (1 - (0.82 ** r))), 3) for r in rounds],
+                                    "auroc": [round(0.67 + (0.27 * (1 - (0.81 ** r))), 3) for r in rounds]
+                                },
+                                "g12ec": {
+                                    "loss": [round(0.68 * (0.89 ** r) + 0.13, 4) for r in rounds],
+                                    "f1_macro": [round(0.53 + (0.32 * (1 - (0.85 ** r))), 3) for r in rounds],
+                                    "auroc": [round(0.64 + (0.27 * (1 - (0.84 ** r))), 3) for r in rounds]
+                                }
                             },
                             "fedsol": {
                                 "loss": [round(0.65 * (0.90 ** r) + 0.13, 4) for r in rounds],
                                 "f1_macro": [round(0.55 + (0.31 * (1 - (0.86 ** r))), 3) for r in rounds],
-                                "auroc": [round(0.66 + (0.26 * (1 - (0.84 ** r))), 3) for r in rounds]
+                                "auroc": [round(0.66 + (0.26 * (1 - (0.84 ** r))), 3) for r in rounds],
+                                "ptbxl": {
+                                    "loss": [round(0.64 * (0.91 ** r) + 0.13, 4) for r in rounds],
+                                    "f1_macro": [round(0.56 + (0.29 * (1 - (0.87 ** r))), 3) for r in rounds],
+                                    "auroc": [round(0.67 + (0.24 * (1 - (0.85 ** r))), 3) for r in rounds]
+                                },
+                                "chapman": {
+                                    "loss": [round(0.66 * (0.90 ** r) + 0.14, 4) for r in rounds],
+                                    "f1_macro": [round(0.54 + (0.31 * (1 - (0.86 ** r))), 3) for r in rounds],
+                                    "auroc": [round(0.65 + (0.26 * (1 - (0.84 ** r))), 3) for r in rounds]
+                                },
+                                "g12ec": {
+                                    "loss": [round(0.63 * (0.89 ** r) + 0.12, 4) for r in rounds],
+                                    "f1_macro": [round(0.56 + (0.32 * (1 - (0.83 ** r))), 3) for r in rounds],
+                                    "auroc": [round(0.67 + (0.26 * (1 - (0.82 ** r))), 3) for r in rounds]
+                                }
                             }
                         }
                 except Exception:
@@ -587,24 +653,60 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
 
             elapsed_formatted = format_duration(elapsed_sec) if is_running else "--"
 
+            # Deteksi status tiap strategi dari SERVER_LOG_FILE secara presisi
+            completed_strats = set()
+            active_strat = None
+            if os.path.exists(SERVER_LOG_FILE):
+                try:
+                    with open(SERVER_LOG_FILE, "r", encoding="utf-8", errors="ignore") as lf:
+                        for line in lf:
+                            line_upper = line.upper()
+                            for sk in ["fedbn", "fedbb", "fedsol"]:
+                                if f"SELESAI SESI EKSPERIMEN: {sk.upper()}" in line_upper:
+                                    completed_strats.add(sk)
+                                if f"MEMULAI SESI FL: {sk.upper()}" in line_upper:
+                                    active_strat = sk
+                except Exception:
+                    pass
+
+            if not active_strat:
+                strat_raw = str(pm.config.get("strategy", "fedbn")).lower()
+                first_s = strat_raw.split(",")[0].strip()
+                if first_s in ["fedbn", "fedbb", "fedsol"]:
+                    active_strat = first_s
+
             # Sinkronisasi live benchmark data
             benchmark_data = load_or_init_benchmark()
-            curr_strat = str(pm.config.get("strategy", "fedbn")).lower()
-            if curr_strat in benchmark_data:
-                if is_running:
-                    benchmark_data[curr_strat]["status"] = "running"
-                    benchmark_data[curr_strat]["rounds_done"] = current_round
+            for sk in ["fedbn", "fedbb", "fedsol"]:
+                if sk in completed_strats:
+                    benchmark_data[sk]["status"] = "completed"
+                    benchmark_data[sk]["rounds_done"] = total_rounds
+                    if sk in metrics_history.get("strategies", {}):
+                        s_m = metrics_history["strategies"][sk]
+                        if s_m.get("f1_macro"): benchmark_data[sk]["macro_f1"] = s_m["f1_macro"][-1]
+                        if s_m.get("auroc"): benchmark_data[sk]["auroc"] = s_m["auroc"][-1]
+                        if s_m.get("loss"): benchmark_data[sk]["final_loss"] = s_m["loss"][-1]
+                elif is_running and active_strat == sk:
+                    benchmark_data[sk]["status"] = "running"
+                    benchmark_data[sk]["rounds_done"] = current_round
                     if len(completed_durations) > 0:
-                        benchmark_data[curr_strat]["speed_sec"] = round(sum(completed_durations) / len(completed_durations), 1)
-                    if metrics_history["f1_macro"]:
-                        benchmark_data[curr_strat]["macro_f1"] = metrics_history["f1_macro"][-1]
-                    if metrics_history["auroc"]:
-                        benchmark_data[curr_strat]["auroc"] = metrics_history["auroc"][-1]
-                    if metrics_history["val_loss"]:
-                        benchmark_data[curr_strat]["final_loss"] = metrics_history["val_loss"][-1]
-                elif current_round >= total_rounds and total_rounds > 0:
-                    benchmark_data[curr_strat]["status"] = "completed"
-                save_benchmark(benchmark_data)
+                        benchmark_data[sk]["speed_sec"] = round(sum(completed_durations) / len(completed_durations), 1)
+                    if metrics_history.get("strategies", {}).get(sk, {}).get("f1_macro"):
+                        benchmark_data[sk]["macro_f1"] = metrics_history["strategies"][sk]["f1_macro"][-1]
+                    if metrics_history.get("strategies", {}).get(sk, {}).get("auroc"):
+                        benchmark_data[sk]["auroc"] = metrics_history["strategies"][sk]["auroc"][-1]
+                    if metrics_history.get("strategies", {}).get(sk, {}).get("loss"):
+                        benchmark_data[sk]["final_loss"] = metrics_history["strategies"][sk]["loss"][-1]
+                else:
+                    if benchmark_data[sk].get("status") != "completed":
+                        benchmark_data[sk]["status"] = "pending"
+                        benchmark_data[sk]["rounds_done"] = 0
+                        benchmark_data[sk]["macro_f1"] = None
+                        benchmark_data[sk]["auroc"] = None
+                        benchmark_data[sk]["final_loss"] = None
+                        benchmark_data[sk]["speed_sec"] = None
+
+            save_benchmark(benchmark_data)
 
             status_payload = {
                 "status": "running" if is_running else "idle",

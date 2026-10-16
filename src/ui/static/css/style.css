@@ -867,3 +867,102 @@ select:focus, input:focus {
   }
 }
 
+/* Live VM Training Telemetry Ribbon */
+.node-telemetry-ribbon {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.65rem;
+  margin-bottom: 0.85rem;
+}
+
+.node-telemetry-chip {
+  background: #f8fafc;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.75rem;
+  transition: all 0.2s ease;
+}
+
+.node-telemetry-chip.active-training {
+  background: #ffffff;
+  border-color: #6366f1;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.12);
+}
+
+.chip-top {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.35rem;
+}
+
+.chip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+
+.chip-dot.training {
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+  animation: pulse 1.5s infinite;
+}
+
+.chip-dot.online {
+  background: #0284c7;
+}
+
+.chip-dot.offline {
+  background: #cbd5e1;
+}
+
+.chip-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-main);
+  flex: 1;
+}
+
+.chip-status-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.chip-status-badge.training {
+  background: #ecfdf5;
+  color: #059669;
+}
+
+.chip-status-badge.online {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+.chip-metrics {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  font-size: 0.72rem;
+  color: var(--text-sub);
+}
+
+.chip-metric-item strong {
+  color: var(--text-main);
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+@media (max-width: 768px) {
+  .node-telemetry-ribbon {
+    grid-template-columns: 1fr;
+  }
+}
+
+
