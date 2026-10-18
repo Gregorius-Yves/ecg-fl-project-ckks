@@ -48,4 +48,6 @@ class FedSOLStrategy(FedAvg):
     """
     Server strategy for FedSOL. Uses FedAvg aggregation over all model parameters.
     """
-    pass
+    def __init__(self, mu: float = 0.01, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.mu = mu

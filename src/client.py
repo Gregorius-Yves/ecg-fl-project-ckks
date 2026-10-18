@@ -313,8 +313,12 @@ class ECGFlowerClient(fl.client.NumPyClient):
         self.set_parameters(parameters)
         if self.strategy in ("fedsol", "fedprox", "scaffold"):
             self.global_model.load_state_dict(self.model.state_dict())
-            if self.strategy == "fedsol" and not hasattr(self, "fedsol_opt"):
-                self.fedsol_opt = FedSOLOptimizer(self.model, self.global_model, lr=self.lr)
+            if self.strategy == "fedsol":
+                mu = float(config.get("fedsol_mu", 0.01))
+                if not hasattr(self, "fedsol_opt"):
+                    self.fedsol_opt = FedSOLOptimizer(self.model, self.global_model, lr=self.lr, mu=mu)
+                else:
+                    self.fedsol_opt.mu = mu
 
         # Setup SCAFFOLD control variates dictionary
         if self.strategy == "scaffold":
