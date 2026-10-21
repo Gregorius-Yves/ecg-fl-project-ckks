@@ -35,11 +35,13 @@ class FedSOLOptimizer:
                 if param.grad is not None:
                     # Direction of drift from global
                     drift_dir = param.data - global_param.data
-                    drift_norm = torch.norm(drift_dir) + 1e-8
+                    drift_norm = torch.norm(drift_dir)
 
                     # Orthogonal projection: grad_orth = grad - ((grad . drift) / ||drift||^2) * drift
-                    proj = torch.sum(param.grad * drift_dir) / (drift_norm ** 2)
-                    param.grad.data = param.grad.data - (proj * drift_dir) + (self.mu * drift_dir)
+                    # Hanya terapkan proyeksi jika terdapat drift yang bermakna (> 1e-6) untuk menghindari ketidakstabilan numerik
+                    if drift_norm > 1e-6:
+                        proj = torch.sum(param.grad * drift_dir) / (drift_norm ** 2)
+                        param.grad.data = param.grad.data - (proj * drift_dir) + (self.mu * drift_dir)
 
         self.base_optimizer.step()
 

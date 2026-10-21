@@ -194,6 +194,12 @@ def run_single_strategy(strategy_name: str, num_rounds: int, server_address: str
 
     reset_live_timing()
 
+    seed = int(os.environ.get("SPLIT_SEED", 42))
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
     model = ResNet1D(in_channels=12, num_classes=27)
     exclude_bn = (strategy_name.lower() == "fedbn")
     state_dict = get_model_parameters(model, exclude_bn=exclude_bn)

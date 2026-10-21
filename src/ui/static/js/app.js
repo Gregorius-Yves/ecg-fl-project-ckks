@@ -16,9 +16,12 @@ const state = {
   benchmarkData: null,
   statusTimer: null,
   logsTimer: null,
+  modalMetric: 'f1',
+  modalRunData: null,
 };
 
 let metricChart = null;
+let modalMetricChart = null;
 
 // Color Palette for Algorithms
 const STRATEGY_COLORS = {
@@ -355,6 +358,7 @@ async function fetchHistoricalRuns() {
     if (!res.ok) return;
     const data = await res.json();
     state.historicalRuns = data.runs || [];
+    populateRunSelector();
     renderHistoricalRunsTable();
 
     // Update storage summary di header
@@ -364,6 +368,31 @@ async function fetchHistoricalRuns() {
     }
   } catch (err) {
     console.error('Error fetching historical runs:', err);
+  }
+}
+
+function populateRunSelector() {
+  const selector = document.getElementById('chartRunSelector');
+  if (!selector) return;
+
+  const currentVal = selector.value;
+  let html = '<option value="latest">⚡ Sesi Terakhir (Live / Default)</option>';
+
+  state.historicalRuns.forEach(r => {
+    const strat = (r.strategy || '').toUpperCase();
+    const started = r.started_at ? new Date(r.started_at * 1000).toLocaleString('id-ID', {
+      day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+    }) : '';
+    const f1 = (r.best_f1 != null) ? `F1: ${Number(r.best_f1).toFixed(3)}` : '';
+    const label = `${r.run_id} [${strat}] ${started ? `(${started})` : ''} ${f1 ? `— ${f1}` : ''}`;
+    html += `<option value="${r.run_id}">${label}</option>`;
+  });
+
+  selector.innerHTML = html;
+  if (state.inspectedRun) {
+    selector.value = state.inspectedRun.run_id;
+  } else {
+    selector.value = currentVal || 'latest';
   }
 }
 
@@ -416,9 +445,12 @@ function renderHistoricalRunsTable() {
         <td class="mono">${lossStr}</td>
         <td class="mono">${aurocStr}</td>
         <td>
-          <div style="display: flex; gap: 0.3rem;">
-            <button class="table-btn primary" onclick="inspectHistoricalRun('${r.run_id}')" title="Visualisasikan run ini ke grafik">
-              Grafik
+          <div style="display: flex; gap: 0.3rem; flex-wrap: wrap;">
+            <button class="table-btn primary" onclick="openRunDetailModal('${r.run_id}')" title="Buka grafik layar penuh & detail lengkap run ini">
+              📈 Grafik
+            </button>
+            <button class="table-btn" onclick="inspectHistoricalRun('${r.run_id}')" title="Visualisasikan run ini ke grafik dasbor">
+              Dasbor
             </button>
             ${r.has_best_model ? `
               <a class="table-btn" href="/api/download-model?run=${r.run_id}&tag=best" download title="Unduh bobot PyTorch terbaik">
@@ -436,17 +468,32 @@ function renderHistoricalRunsTable() {
 }
 
 async function inspectHistoricalRun(runId) {
+  if (runId === 'latest') {
+    exitInspect();
+    return;
+  }
   try {
     const res = await fetch(`/api/runs/${runId}`);
     if (!res.ok) return;
     const runData = await res.json();
     state.inspectedRun = runData;
 
-    // Show inspect banner
+    // Sync selector
+    const selector = document.getElementById('chartRunSelector');
+    if (selector) selector.value = runId;
+
+    // Show inspect banner with extra details
     const banner = document.getElementById('inspectBanner');
     const runIdText = document.getElementById('inspectRunId');
+    const detailsText = document.getElementById('inspectRunDetails');
     if (banner && runIdText) {
       runIdText.textContent = runId;
+      if (detailsText) {
+        const strat = (runData.strategy || '').toUpperCase();
+        const rounds = (runData.rounds || []).length;
+        const bestF1 = runData.models?.best?.f1_macro != null ? Number(runData.models.best.f1_macro).toFixed(4) : '-';
+        detailsText.textContent = `• Strategi: ${strat} • ${rounds} Ronde • Best Macro-F1: ${bestF1}`;
+      }
       banner.style.display = 'flex';
     }
 
@@ -464,8 +511,187 @@ function exitInspect() {
   state.inspectedRun = null;
   const banner = document.getElementById('inspectBanner');
   if (banner) banner.style.display = 'none';
+  const selector = document.getElementById('chartRunSelector');
+  if (selector) selector.value = 'latest';
   renderHistoricalRunsTable();
   renderChart();
+}
+
+// -------------------------------------------------------------
+// HISTORICAL RUN MODAL DIALOG & CHART
+// -------------------------------------------------------------
+async function openRunDetailModal(runId) {
+  try {
+    const res = await fetch(`/api/runs/${runId}`);
+    if (!res.ok) return;
+    const runData = await res.json();
+    state.modalRunData = runData;
+
+    const modal = document.getElementById('runDetailModal');
+    if (!modal) return;
+
+    // Title & subtitle
+    document.getElementById('modalRunTitle').textContent = `Inspeksi Grafik: ${runId}`;
+    const strat = (runData.strategy || '').toUpperCase();
+    const started = runData.started_at ? new Date(runData.started_at * 1000).toLocaleString('id-ID') : '-';
+    const durationSec = (runData.finished_at && runData.started_at) ? Math.round(runData.finished_at - runData.started_at) : '-';
+    document.getElementById('modalRunSubtitle').textContent = `Strategi ${strat} • Dimulai ${started} • Durasi Total: ${durationSec}s`;
+
+    // Metadata pills
+    const bestF1 = runData.models?.best?.f1_macro != null ? Number(runData.models.best.f1_macro).toFixed(4) : '-';
+    const lastRound = runData.rounds?.[runData.rounds.length - 1];
+    const finalLoss = lastRound?.global?.val_loss != null ? Number(lastRound.global.val_loss).toFixed(4) : '-';
+    const finalAuroc = lastRound?.global?.auroc != null ? Number(lastRound.global.auroc).toFixed(4) : '-';
+
+    const metaBar = document.getElementById('modalMetaBar');
+    if (metaBar) {
+      metaBar.innerHTML = `
+        <div class="meta-pill">Algoritma: <strong>${strat}</strong></div>
+        <div class="meta-pill">Status: <strong class="badge-status ${runData.status || ''}">${runData.status || '-'}</strong></div>
+        <div class="meta-pill">Ronde Selesai: <strong>${(runData.rounds || []).length} / ${runData.config?.num_rounds ?? '-'}</strong></div>
+        <div class="meta-pill">Best F1-Macro: <strong style="color: #2563eb;">${bestF1}</strong></div>
+        <div class="meta-pill">Final Loss: <strong>${finalLoss}</strong></div>
+        <div class="meta-pill">Final AUROC: <strong>${finalAuroc}</strong></div>
+      `;
+    }
+
+    // Config details
+    const cfgBox = document.getElementById('modalConfigDetails');
+    if (cfgBox && runData.config) {
+      const c = runData.config;
+      cfgBox.innerHTML = `
+        <div class="modal-config-item"><span>Batch Size</span><strong>${c.batch_size ?? 32}</strong></div>
+        <div class="modal-config-item"><span>Local Epochs</span><strong>${c.local_epochs ?? 3}</strong></div>
+        <div class="modal-config-item"><span>Learning Rate</span><strong>${c.learning_rate ?? 0.001}</strong></div>
+        <div class="modal-config-item"><span>Val Fraction</span><strong>${c.val_fraction ?? 0.2}</strong></div>
+        <div class="modal-config-item"><span>Split Seed</span><strong>${c.split_seed ?? 42}</strong></div>
+        ${c.proximal_mu != null ? `<div class="modal-config-item"><span>Proximal Mu</span><strong>${c.proximal_mu}</strong></div>` : ''}
+        ${c.fedbb_alpha != null || c.alpha != null ? `<div class="modal-config-item"><span>FedBB Alpha</span><strong>${c.fedbb_alpha ?? c.alpha}</strong></div>` : ''}
+        ${c.fedsol_mu != null ? `<div class="modal-config-item"><span>FedSOL Mu</span><strong>${c.fedsol_mu}</strong></div>` : ''}
+      `;
+    }
+
+    // Download buttons
+    const dlModel = document.getElementById('modalDownloadModelBtn');
+    if (dlModel) {
+      if (runData.models?.best) {
+        dlModel.href = `/api/download-model?run=${runId}&tag=best`;
+        dlModel.style.display = 'inline-flex';
+      } else {
+        dlModel.style.display = 'none';
+      }
+    }
+    const dlJson = document.getElementById('modalDownloadJsonBtn');
+    if (dlJson) {
+      dlJson.href = `/api/download-metrics?run=${runId}`;
+    }
+
+    modal.style.display = 'flex';
+    renderModalChart();
+  } catch (err) {
+    console.error('Error opening run detail modal:', err);
+  }
+}
+
+function closeRunDetailModal() {
+  const modal = document.getElementById('runDetailModal');
+  if (modal) modal.style.display = 'none';
+}
+
+function renderModalChart() {
+  const run = state.modalRunData;
+  if (!run || !run.rounds) return;
+
+  const ctx = document.getElementById('modalMetricChart');
+  if (!ctx) return;
+
+  const validRounds = run.rounds.filter(r => r.global);
+  const rounds = validRounds.map(r => r.round);
+
+  const metric = state.modalMetric || 'f1';
+  const metricKey = (metric === 'f1') ? 'f1_macro' : (metric === 'loss' ? 'val_loss' : 'auroc');
+
+  let yTitle = 'Macro-F1 (0.0 - 1.0)';
+  if (metric === 'auroc') yTitle = 'AUROC (0.5 - 1.0)';
+  if (metric === 'loss') yTitle = 'BCE Validation Loss';
+
+  const strat = (run.strategy || 'fedavg').toLowerCase();
+  const color = STRATEGY_COLORS[strat] || { border: '#2563eb', bg: 'rgba(37, 99, 235, 0.08)' };
+
+  const datasets = [
+    {
+      label: `Model Global (${strat.toUpperCase()})`,
+      data: validRounds.map(r => r.global ? r.global[metricKey] : null),
+      borderColor: color.border,
+      backgroundColor: color.bg,
+      borderWidth: 3,
+      tension: 0.15,
+      pointRadius: 3
+    }
+  ];
+
+  // Per-client series
+  for (const [dsKey, cInfo] of Object.entries(CLIENT_COLORS)) {
+    const clientSeries = validRounds.map(r => {
+      const c = r.clients && r.clients[dsKey];
+      return c ? c[metricKey] : null;
+    });
+    if (clientSeries.some(v => v !== null)) {
+      datasets.push({
+        label: cInfo.label,
+        data: clientSeries,
+        borderColor: cInfo.border,
+        borderDash: [5, 4],
+        borderWidth: 2,
+        tension: 0.15,
+        pointRadius: 2.5
+      });
+    }
+  }
+
+  if (modalMetricChart) {
+    modalMetricChart.destroy();
+  }
+
+  modalMetricChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: rounds,
+      datasets: datasets
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+          labels: { font: { size: 11, family: 'Inter' }, boxWidth: 14 }
+        },
+        tooltip: {
+          mode: 'index',
+          intersect: false,
+          callbacks: {
+            title: (items) => `Ronde ${items[0].label}`,
+            label: (item) => `${item.dataset.label}: ${item.raw != null ? Number(item.raw).toFixed(4) : '-'}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          title: { display: true, text: 'Ronde Federasi' },
+          grid: { color: '#f1f5f9' }
+        },
+        y: {
+          title: { display: true, text: yTitle },
+          grid: { color: '#f1f5f9' },
+          beginAtZero: metric !== 'auroc',
+          min: metric === 'auroc' ? 0.45 : undefined,
+          max: (metric === 'f1' || metric === 'auroc') ? 1.0 : undefined
+        }
+      }
+    }
+  });
 }
 
 // -------------------------------------------------------------
@@ -791,10 +1017,42 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  // Chart Run Selector (Pilih Sesi Live atau Arsip Lampau)
+  document.getElementById('chartRunSelector')?.addEventListener('change', (e) => {
+    if (e.target.value === 'latest') {
+      exitInspect();
+    } else {
+      inspectHistoricalRun(e.target.value);
+    }
+  });
+
   // Historical Runs Refresh & Filter
   document.getElementById('btnRefreshHistory')?.addEventListener('click', fetchHistoricalRuns);
   document.getElementById('filterHistoryStrategy')?.addEventListener('change', renderHistoricalRunsTable);
   document.getElementById('btnExitInspect')?.addEventListener('click', exitInspect);
+  document.getElementById('btnModalInspect')?.addEventListener('click', () => {
+    if (state.inspectedRun?.run_id) {
+      openRunDetailModal(state.inspectedRun.run_id);
+    }
+  });
+
+  // Modal Dialog Controls
+  document.getElementById('btnModalClose')?.addEventListener('click', closeRunDetailModal);
+  document.getElementById('runDetailModal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'runDetailModal') closeRunDetailModal();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeRunDetailModal();
+  });
+
+  document.querySelectorAll('#modalMetricTabs .seg-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      document.querySelectorAll('#modalMetricTabs .seg-btn').forEach(b => b.classList.remove('active'));
+      e.target.classList.add('active');
+      state.modalMetric = e.target.dataset.metric;
+      renderModalChart();
+    });
+  });
 
   // Benchmark Refresh
   document.getElementById('btnRefreshBenchmark')?.addEventListener('click', fetchBenchmark);
@@ -820,3 +1078,5 @@ document.addEventListener('DOMContentLoaded', () => {
 window.inspectHistoricalRun = inspectHistoricalRun;
 window.exitInspect = exitInspect;
 window.updateSeqPreview = updateSeqPreview;
+window.openRunDetailModal = openRunDetailModal;
+window.closeRunDetailModal = closeRunDetailModal;

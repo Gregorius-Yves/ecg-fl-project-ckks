@@ -94,7 +94,13 @@ class ResNet1D(nn.Module):
 def is_batchnorm_param(name: str) -> bool:
     """Helper untuk mendeteksi apakah parameter termasuk layer BatchNorm1d (Krusial untuk FedBN)"""
     bn_indicators = ["bn", "running_mean", "running_var", "num_batches_tracked"]
-    return any(ind in name.lower() for ind in bn_indicators)
+    if any(ind in name.lower() for ind in bn_indicators):
+        return True
+    # Di ResidualBlock1D, shortcut downsample berupa nn.Sequential(Conv1d, BatchNorm1d)
+    # sehingga layer indeks 1 adalah BatchNorm1d (shortcut.1.weight, shortcut.1.bias)
+    if "shortcut.1." in name:
+        return True
+    return False
 
 
 def get_model_parameters(model: nn.Module, exclude_bn: bool = False):

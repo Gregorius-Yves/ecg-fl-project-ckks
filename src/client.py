@@ -28,8 +28,17 @@ import threading
 import urllib.request
 import json
 import time
-
 import collections
+
+
+def set_seed(seed: int = 42):
+    """Set random seed secara global untuk reproduktibilitas eksperimen."""
+    import random
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 
 def _effective_cpu_count() -> int:
@@ -185,6 +194,7 @@ class ECGFlowerClient(fl.client.NumPyClient):
 
     def reset_state(self):
         """Reset state internal klien (strategi, model lokal, optimizer) antar sesi strategi."""
+        set_seed(int(os.environ.get("SPLIT_SEED", 42)))
         self.strategy = "auto"
         self.current_round = 0
         self.current_epoch = 0
@@ -239,9 +249,17 @@ class ECGFlowerClient(fl.client.NumPyClient):
         val_idx, train_idx = perm[:n_val], perm[n_val:]
         train_set = _TensorSplit(real_dataset.signals[train_idx].contiguous(), real_dataset.labels[train_idx].contiguous())
         val_set = _TensorSplit(real_dataset.signals[val_idx].contiguous(), real_dataset.labels[val_idx].contiguous())
+        self.train_set = train_set
+        self.val_set = val_set
         print(f"✂️ Split data: train={len(train_set)} | validasi={len(val_set)} (seed={split_seed})", flush=True)
-        self.train_loader = FastTensorLoader(train_set, batch_size=self.batch_size, shuffle=True, drop_last=True)
-        self.eval_loader = FastTensorLoader(val_set, batch_size=max(self.batch_size, 128), shuffle=False)
+
+        # Hitung skor keseimbangan kelas lokal untuk CBR (FedBB Subbab 2.4.2)
+        counts = self.train_set.labels.sum(dim=0)
+        self.balance_score = float(1.0 / (1.0 + counts.std() / (counts.mean() + 1e-8)))
+        print(f"⚖️ Skor keseimbangan kelas ({self.dataset_name}): {self.balance_score:.4f}", flush=True)
+
+        self.train_loader = FastTensorLoader(self.train_set, batch_size=self.batch_size, shuffle=True, drop_last=True)
+        self.eval_loader = FastTensorLoader(self.val_set, batch_size=max(self.batch_size, 128), shuffle=False)
 
     def get_parameters(self, config):
         """Ambil parameter model untuk dikirim ke server"""
@@ -277,6 +295,26 @@ class ECGFlowerClient(fl.client.NumPyClient):
                 ]
         self.model.load_state_dict(state_dict)
 
+    def _grad_at_global(self):
+        """Menghitung gradien rata-rata pada model global sebelum pelatihan lokal (SCAFFOLD Option I).
+        Option I tidak bergantung pada jenis optimizer lokal (sepenuhnya kompatibel dengan Adam)."""
+        self.model.eval()  # Jangan ubah statistik running BatchNorm
+        g = {n: torch.zeros_like(p) for n, p in self.model.named_parameters()}
+        nb = 0
+        for x, y in self.train_loader:
+            self.model.zero_grad()
+            logits = self.model(x.to(self.device))
+            loss = self.criterion(logits, y.to(self.device))
+            loss.backward()
+            with torch.no_grad():
+                for n, p in self.model.named_parameters():
+                    if p.grad is not None:
+                        g[n] += p.grad
+            nb += 1
+        self.model.train()
+        nb = max(1, nb)
+        return {n: v / nb for n, v in g.items()}
+
     def fit(self, parameters, config):
         # Otomatis baca instruksi strategi dan hyperparameter dari Server Pusat
         server_strategy = config.get("strategy", self.strategy).lower()
@@ -296,17 +334,34 @@ class ECGFlowerClient(fl.client.NumPyClient):
         self.current_round = server_round
         self.total_epochs = epochs
         self.current_lr = float(config.get("lr", self.lr))
+
+        # Sinkronkan batch size jika server meminta ukuran berbeda
+        server_batch_size = int(config.get("batch_size", self.batch_size))
+        if server_batch_size != self.batch_size and hasattr(self, "train_set"):
+            print(f"🔄 Menyesuaikan batch size klien: {self.batch_size} -> {server_batch_size}", flush=True)
+            self.batch_size = server_batch_size
+            self.train_loader = FastTensorLoader(self.train_set, batch_size=self.batch_size, shuffle=True, drop_last=True)
+            self.eval_loader = FastTensorLoader(self.val_set, batch_size=max(self.batch_size, 128), shuffle=False)
+
+        # Sinkronkan lr ke Adam optimizer
+        for param_group in self.optimizer.param_groups:
+            param_group["lr"] = self.current_lr
+
         self.total_batches = len(self.train_loader)
         self.current_epoch = 1
         self.current_batch = 0
         self.current_status = "training"
         self.current_detail = f"Ronde {server_round} (Memulai)"
-        print(f"\n📢 [ROUND {server_round}] Instruksi dari Server: Menjalankan Strategi '{self.strategy.upper()}' ({epochs} epoch, lr={self.current_lr})")
+        print(f"\n📢 [ROUND {server_round}] Instruksi dari Server: Menjalankan Strategi '{self.strategy.upper()}' ({epochs} epoch, lr={self.current_lr}, batch_size={self.batch_size})")
         self.log_history.append(f"📢 [ROUND {server_round}] Strategi '{self.strategy.upper()}' ({epochs} epoch, lr={self.current_lr})")
 
         # Sesuaikan Loss Function & Optimizer sesuai perintah Server
         if self.strategy == "fedbb":
-            self.criterion = PNBLoss()
+            pos_counts = self.train_set.labels.sum(dim=0).to(self.device)
+            total_train = len(self.train_set.labels)
+            neg_counts = total_train - pos_counts
+            pos_weight = torch.clamp(neg_counts / (pos_counts + 1e-5), min=0.1, max=50.0)
+            self.criterion = PNBLoss(pos_weight=pos_weight)
         else:
             self.criterion = nn.BCEWithLogitsLoss()
 
@@ -316,11 +371,14 @@ class ECGFlowerClient(fl.client.NumPyClient):
             if self.strategy == "fedsol":
                 mu = float(config.get("fedsol_mu", 0.01))
                 if not hasattr(self, "fedsol_opt"):
-                    self.fedsol_opt = FedSOLOptimizer(self.model, self.global_model, lr=self.lr, mu=mu)
+                    self.fedsol_opt = FedSOLOptimizer(self.model, self.global_model, lr=self.current_lr, mu=mu)
                 else:
                     self.fedsol_opt.mu = mu
+                    for param_group in self.fedsol_opt.base_optimizer.param_groups:
+                        param_group["lr"] = self.current_lr
 
-        # Setup SCAFFOLD control variates dictionary
+        # Setup SCAFFOLD control variates dictionary & hitung Option I c_plus
+        c_plus = None
         if self.strategy == "scaffold":
             all_keys = list(self.model.state_dict().keys())
             if not getattr(self, "client_c_dict", None):
@@ -329,6 +387,8 @@ class ECGFlowerClient(fl.client.NumPyClient):
                 self.server_c = [torch.zeros_like(v) for v in self.model.state_dict().values()]
             c_s_dict = {k: c for k, c in zip(all_keys, self.server_c)}
             c_i_dict = self.client_c_dict
+            # SCAFFOLD Option I: hitung gradien pada model global sebelum epoch loop
+            c_plus = self._grad_at_global()
 
         self.model.train()
         total_loss = 0.0
@@ -354,7 +414,7 @@ class ECGFlowerClient(fl.client.NumPyClient):
                         prox_mu = float(config.get("proximal_mu", 0.01))
                         prox_loss = torch.zeros((), device=self.device)
                         for p, p_g in zip(self.model.parameters(), self.global_model.parameters()):
-                            prox_loss = prox_loss + torch.norm(p - p_g) ** 2
+                            prox_loss = prox_loss + ((p - p_g.detach()) ** 2).sum()
                         loss = loss + (prox_mu / 2.0) * prox_loss
 
                     loss.backward()
@@ -384,28 +444,19 @@ class ECGFlowerClient(fl.client.NumPyClient):
                     self.log_history.append(msg)
                     print(msg, flush=True)
 
-        # Update control variates SCAFFOLD: Delta c_i = c_i^+ - c_i (Karimireddy et al., 2020)
-        if self.strategy == "scaffold":
-            total_steps = max(1, epochs * total_batches)
-            step_scale = 1.0 / (total_steps * self.current_lr)
+        # Update control variates SCAFFOLD: Delta c_i = c_i^+ - c_i (Option I)
+        if self.strategy == "scaffold" and c_plus is not None:
             new_c_dict = {}
             delta_c_list = []
-            curr_sd = self.model.state_dict()
-            glob_sd = self.global_model.state_dict()
             with torch.no_grad():
-                for name, y_i in curr_sd.items():
-                    x_0 = glob_sd[name]
-                    c_i = c_i_dict.get(name, torch.zeros_like(y_i))
-                    c_s = c_s_dict.get(name, torch.zeros_like(y_i))
-                    if y_i.is_floating_point():
-                        delta_w = x_0.to(self.device) - y_i
-                        c_i_plus = c_i - c_s + step_scale * delta_w
-                        dc = c_i_plus - c_i
+                for name, v in self.model.state_dict().items():
+                    c_i = c_i_dict[name]
+                    if name in c_plus:  # hanya parameter teroptimasi, bukan buffer BN
+                        new_c_dict[name] = c_plus[name]
+                        delta_c_list.append(c_plus[name] - c_i)
                     else:
-                        c_i_plus = c_i
-                        dc = torch.zeros_like(y_i)
-                    new_c_dict[name] = c_i_plus
-                    delta_c_list.append(dc)
+                        new_c_dict[name] = c_i
+                        delta_c_list.append(torch.zeros_like(v))
             self.client_c_dict = new_c_dict
             self.delta_c = delta_c_list
 
@@ -423,7 +474,7 @@ class ECGFlowerClient(fl.client.NumPyClient):
             "client_id": self.client_id,
             "dataset": self.dataset_name,
             "strategy": self.strategy,
-            "balance_score": 1.0,
+            "balance_score": float(getattr(self, "balance_score", 1.0)),
             "round_duration": float(round_duration)
         }
         return self.get_parameters(config={}), num_examples, metrics
@@ -463,6 +514,8 @@ class ECGFlowerClient(fl.client.NumPyClient):
 
 
 def main():
+    set_seed(int(os.environ.get("SPLIT_SEED", 42)))
+
     parser = argparse.ArgumentParser(description="Flower ECG FL Client")
     parser.add_argument("--server", type=str, default=os.environ.get("SERVER_ADDRESS", "10.34.100.114:8080"))
     parser.add_argument("--client_id", type=str, default=os.environ.get("CLIENT_ID", "1"))

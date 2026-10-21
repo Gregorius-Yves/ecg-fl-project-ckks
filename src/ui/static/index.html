@@ -362,6 +362,14 @@
           </div>
           
           <div class="chart-controls-wrapper">
+            <!-- Selector Run Historis / Live -->
+            <div class="run-selector-box" title="Pilih sesi eksperimen aktif atau buka grafik hasil lampau">
+              <label for="chartRunSelector" class="form-label-xs">Sesi:</label>
+              <select id="chartRunSelector" class="form-select-sm" style="font-weight: 600; min-width: 190px;">
+                <option value="latest">⚡ Sesi Terakhir (Live / Default)</option>
+              </select>
+            </div>
+
             <!-- Mode Switcher -->
             <div class="segmented-control" id="chartModeTabs">
               <button class="seg-btn active" data-mode="strategy">Global</button>
@@ -382,10 +390,19 @@
         </div>
 
         <div class="card-body">
-          <!-- Active Inspect Ribbon (muncul jika user mengklik salah satu run di riwayat) -->
+          <!-- Active Inspect Ribbon (muncul jika user memilih salah satu run lampau) -->
           <div class="inspect-banner" id="inspectBanner" style="display: none;">
-            <span>Menampilkan data historis run: <strong id="inspectRunId" class="mono">--</strong></span>
-            <button type="button" class="btn-link" id="btnExitInspect">Kembali ke Sesi Terakhir</button>
+            <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+              <span class="badge-status online" style="font-size: 0.65rem;">ARSIP HISTORIS</span>
+              <span>Run: <strong id="inspectRunId" class="mono">--</strong></span>
+              <span id="inspectRunDetails" class="text-muted"></span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+              <button type="button" class="btn btn-secondary btn-sm" id="btnModalInspect" style="padding: 0.15rem 0.5rem; font-size: 0.68rem;">
+                🔍 Layar Penuh
+              </button>
+              <button type="button" class="btn-link" id="btnExitInspect" style="color: #dc2626; font-weight: 600;">✕ Kembali ke Sesi Terakhir</button>
+            </div>
           </div>
 
           <div class="chart-wrapper">
@@ -427,9 +444,55 @@
 
     </div>
 
-  </main>
+  <!-- MODAL GRAFIK DETAIL RUN HISTORIS -->
+  <div class="modal-backdrop" id="runDetailModal" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div>
+          <div class="modal-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+            <span id="modalRunTitle">Detail Grafik Eksperimen</span>
+          </div>
+          <div class="modal-subtitle" id="modalRunSubtitle">Inspeksi kurva konvergensi lengkap dan parameter run</div>
+        </div>
+        <button type="button" class="modal-close-btn" id="btnModalClose">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Metadata summary pills -->
+        <div class="modal-meta-bar" id="modalMetaBar"></div>
+
+        <!-- Controls: Metric tabs & Downloads -->
+        <div class="modal-controls-bar">
+          <div class="segmented-control" id="modalMetricTabs">
+            <button class="seg-btn active" data-metric="f1">Macro-F1</button>
+            <button class="seg-btn" data-metric="auroc">AUROC</button>
+            <button class="seg-btn" data-metric="loss">Validation Loss</button>
+          </div>
+          <div class="modal-actions-right" style="display: flex; gap: 0.4rem;">
+            <a id="modalDownloadModelBtn" class="btn btn-secondary btn-sm" href="#" download style="display: none;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              best.pt
+            </a>
+            <a id="modalDownloadJsonBtn" class="btn btn-secondary btn-sm" href="#" download>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              metrics.json
+            </a>
+          </div>
+        </div>
+
+        <!-- Canvas -->
+        <div class="modal-chart-wrapper">
+          <canvas id="modalMetricChart"></canvas>
+        </div>
+
+        <!-- Configuration parameter table -->
+        <div class="modal-config-details" id="modalConfigDetails"></div>
+      </div>
+    </div>
+  </div>
 
   <!-- Application Logic -->
-  <script src="/static/js/app.js?v=2.2"></script>
+  <script src="/static/js/app.js?v=2.3"></script>
 </body>
 </html>
