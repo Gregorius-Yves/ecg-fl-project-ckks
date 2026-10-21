@@ -759,10 +759,10 @@ async function fetchStatus() {
     if (!res.ok) return;
     const data = await res.json();
 
-    state.isRunning = Boolean(data.is_running);
-    updateServerBadge(data.server_status);
+    state.isRunning = Boolean(data.is_running ?? (data.status === 'running'));
+    updateServerBadge(data.server_status || data.status);
     updateControlButtons(state.isRunning);
-    updateClients(data.clients || {}, data.connected_clients ?? 0);
+    updateClients(data.clients || {}, data.connected_clients ?? data.connected_count ?? 0);
     updateProgress(data);
 
     // Ambil metrics jika sedang running
@@ -835,9 +835,10 @@ function updateProgress(data) {
   const curRound = data.current_round ?? 0;
   const totalRounds = data.total_rounds ?? 50;
   const pct = totalRounds > 0 ? Math.min(100, Math.round((curRound / totalRounds) * 100)) : 0;
+  const isRunning = Boolean(data.is_running ?? (data.status === 'running') ?? state.isRunning);
 
   if (roundText) {
-    roundText.textContent = state.isRunning
+    roundText.textContent = isRunning
       ? `Ronde Federasi: ${curRound} / ${totalRounds}`
       : (curRound > 0 ? `Selesai Ronde: ${curRound} / ${totalRounds}` : 'Ronde Federasi: Standby');
   }
@@ -845,10 +846,32 @@ function updateProgress(data) {
   if (barFill) barFill.style.width = `${pct}%`;
 
   if (etaText) {
-    etaText.textContent = data.eta_seconds != null ? `${Math.ceil(data.eta_seconds / 60)} menit` : (state.isRunning ? 'Menghitung...' : 'Siap dimulai');
+    if (isRunning) {
+      if (data.eta_formatted) {
+        etaText.textContent = data.eta_formatted;
+      } else if (data.eta_seconds != null && data.eta_seconds > 0) {
+        const m = Math.floor(data.eta_seconds / 60);
+        const s = data.eta_seconds % 60;
+        etaText.textContent = m > 0 ? `~${m}m ${s}s (${Math.max(0, totalRounds - curRound)} rd tersisa)` : `~${s}s`;
+      } else {
+        etaText.textContent = curRound > 0 ? `Mengukur Ronde ${curRound}...` : 'Menghitung estimasi...';
+      }
+    } else {
+      if (curRound >= totalRounds && totalRounds > 0) {
+        etaText.textContent = 'Pelatihan Selesai';
+      } else {
+        etaText.textContent = data.eta_formatted || 'Siap dimulai';
+      }
+    }
   }
   if (speedText) {
-    speedText.textContent = data.avg_round_duration != null ? `Laju: ${data.avg_round_duration} s/rd` : 'Kecepatan: --';
+    if (data.speed_formatted && data.speed_formatted !== '--') {
+      speedText.textContent = `Laju: ${data.speed_formatted}`;
+    } else if (data.avg_round_duration != null && data.avg_round_duration > 0) {
+      speedText.textContent = `Laju: ${data.avg_round_duration} s/rd`;
+    } else {
+      speedText.textContent = isRunning ? 'Laju: Mengukur...' : 'Kecepatan: --';
+    }
   }
 }
 
