@@ -15,7 +15,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   
   <!-- Dense Scientific Theme CSS -->
-  <link rel="stylesheet" href="/static/css/style.css?v=2.2">
+  <link rel="stylesheet" href="/static/css/style.css?v=2.4">
 </head>
 <body>
 
@@ -260,7 +260,7 @@
           </div>
         </div>
         <div class="header-actions-group">
-          <select id="filterHistoryStrategy" class="form-select-sm">
+          <select id="filterHistoryStrategy" class="form-select-sm" title="Filter berdasarkan algoritma">
             <option value="all">Semua Algoritma</option>
             <option value="fedavg">FedAvg</option>
             <option value="fedprox">FedProx</option>
@@ -268,6 +268,13 @@
             <option value="fedbn">FedBN</option>
             <option value="fedbb">FedBB</option>
             <option value="fedsol">FedSOL</option>
+          </select>
+          <select id="filterHistoryStatus" class="form-select-sm" title="Filter berdasarkan status run">
+            <option value="all">Semua Status</option>
+            <option value="completed">Completed (Selesai)</option>
+            <option value="running">Running (Berjalan)</option>
+            <option value="interrupted">Interrupted (Dihentikan)</option>
+            <option value="failed">Failed / Error (Gagal)</option>
           </select>
           <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshHistory">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
@@ -493,6 +500,6 @@
   </div>
 
   <!-- Application Logic -->
-  <script src="/static/js/app.js?v=2.3"></script>
+  <script src="/static/js/app.js?v=2.4"></script>
 </body>
 </html>

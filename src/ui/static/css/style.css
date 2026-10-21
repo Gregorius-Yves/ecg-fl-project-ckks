@@ -630,7 +630,17 @@ body {
   color: #15803d;
 }
 
+.badge-status.running {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
 .badge-status.interrupted {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.badge-status.failed {
   background: #fee2e2;
   color: #b91c1c;
 }

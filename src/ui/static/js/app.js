@@ -401,17 +401,28 @@ function renderHistoricalRunsTable() {
   if (!tbody) return;
 
   const filterStrat = (document.getElementById('filterHistoryStrategy')?.value || 'all').toLowerCase();
+  const filterStatus = (document.getElementById('filterHistoryStatus')?.value || 'all').toLowerCase();
   let runs = state.historicalRuns;
 
   if (filterStrat !== 'all') {
     runs = runs.filter(r => (r.strategy || '').toLowerCase() === filterStrat);
   }
 
+  if (filterStatus !== 'all') {
+    runs = runs.filter(r => {
+      const st = (r.status || '').toLowerCase();
+      if (filterStatus === 'failed') {
+        return st === 'failed' || st === 'error' || st === 'incomplete';
+      }
+      return st === filterStatus;
+    });
+  }
+
   if (runs.length === 0) {
     tbody.innerHTML = `
       <tr>
         <td colspan="9" class="text-center text-muted" style="padding: 1.25rem;">
-          Belum ada riwayat eksperimen untuk kategori ini.
+          Tidak ada riwayat eksperimen yang sesuai dengan filter yang dipilih.
         </td>
       </tr>
     `;
@@ -1052,6 +1063,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Historical Runs Refresh & Filter
   document.getElementById('btnRefreshHistory')?.addEventListener('click', fetchHistoricalRuns);
   document.getElementById('filterHistoryStrategy')?.addEventListener('change', renderHistoricalRunsTable);
+  document.getElementById('filterHistoryStatus')?.addEventListener('change', renderHistoricalRunsTable);
   document.getElementById('btnExitInspect')?.addEventListener('click', exitInspect);
   document.getElementById('btnModalInspect')?.addEventListener('click', () => {
     if (state.inspectedRun?.run_id) {
