@@ -1,71 +1,104 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="id" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="CardioPulse FL - Federated Learning Experiment Control & Clinical Metric Dashboard">
-  <title>CardioPulse FL — Panel Eksperimen & Monitoring EKG</title>
+  <meta name="description" content="ECG-FL Orchestrator - Cross-Silo Federated Learning Benchmark & Node Telemetry Dashboard">
+  <title>ECG-FL Orchestrator — Cross-Silo Federated Learning Benchmark</title>
   
   <!-- Modern Clean Typography -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   
-  <!-- Dense Scientific Theme CSS -->
-  <link rel="stylesheet" href="/static/css/style.css?v=2.4">
+  <!-- Master Stylesheet (Supports Dark & Light Theme) -->
+  <link rel="stylesheet" href="/static/css/style.css?v=3.0">
 </head>
-<body>
+<body class="theme-dark">
 
-  <!-- Compact Top Navigation -->
+  <!-- ==============================================================================
+       1. HEADER (TOP NAVIGATION BAR)
+       ============================================================================== -->
   <header class="app-header" id="appHeader">
-    <div class="brand-wrapper">
-      <div class="brand-icon">
+    <!-- Branding & Project Info -->
+    <div class="header-branding">
+      <div class="brand-icon pulse-glow">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
         </svg>
       </div>
       <div class="brand-info">
-        <h1>CardioPulse FL <span class="version-tag">v2.1 • Research Core</span></h1>
-        <p>Cross-Silo Federated Learning Benchmark • Multi-Dataset 12-Lead ECG</p>
+        <h1>ECG-FL Orchestrator <span class="version-badge">v3.0 • Multi-Silo EKG</span></h1>
+        <p>Cross-Silo Federated Learning Benchmark • 12-Lead ECG</p>
       </div>
     </div>
 
-    <div class="header-status">
-      <div class="storage-badge" title="Penyimpanan append-only: semua run tersimpan permanen di results/runs/">
-        <span class="status-indicator-dot dot-storage"></span>
-        <span id="storageSummaryText">Storage: Append-Only (0 Overwrite)</span>
+    <!-- Status Global (Koneksi Backend/gRPC, Waktu Server, Storage) -->
+    <div class="header-status-center">
+      <div class="status-pill status-grpc" id="globalConnBadge" title="Status konektivitas Flower Server gRPC (Port 8080)">
+        <span class="status-dot dot-online" id="grpcStatusDot"></span>
+        <span id="grpcStatusText">gRPC: Online (Standby)</span>
       </div>
-      <div class="server-badge" id="serverStatusBadge">
-        <span class="dot idle" id="serverStatusDot"></span>
-        <span id="serverStatusText">Server: Standby</span>
+
+      <div class="status-pill status-clock" title="Waktu server terpusat">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span id="serverClockDisplay" class="mono">--:--:-- WIB</span>
       </div>
+
+      <div class="status-pill status-storage" title="Penyimpanan append-only: semua run tersimpan permanen">
+        <span class="status-dot dot-storage"></span>
+        <span id="storageSummaryText">Storage: Append-Only</span>
+      </div>
+    </div>
+
+    <!-- Global Actions (Emergency Stop, Export Artifacts, Theme Toggle) -->
+    <div class="header-actions">
+      <button type="button" class="btn btn-danger btn-sm btn-emergency" id="btnEmergencyStop" title="Hentikan paksa seluruh proses pelatihan Flower Server dan Klien">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+        Emergency Stop
+      </button>
+
+      <button type="button" class="btn btn-secondary btn-sm" id="btnExportArtifacts" title="Unduh arsip lengkap metrik, konfigurasi, dan ringkasan run (JSON)">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export Artifacts
+      </button>
+
+      <button type="button" class="btn-theme-toggle" id="btnThemeToggle" title="Ganti Mode Gelap / Terang" aria-label="Toggle Dark/Light Mode">
+        <span class="theme-icon-sun">☀️</span>
+        <span class="theme-icon-moon">🌙</span>
+      </button>
     </div>
   </header>
 
-  <!-- Main Container -->
+  <!-- ==============================================================================
+       MAIN LAYOUT CONTAINER
+       ============================================================================== -->
   <main class="main-layout" id="mainContainer">
 
-    <!-- TOP GRID: [1] Experiment Control + [2] Client Nodes Status -->
-    <div class="top-grid">
+    <!-- ==============================================================================
+         2. PANEL KONTROL & RINGKASAN BERJALAN (ROW 1: 2 KOLOM)
+         ============================================================================== -->
+    <div class="row-grid-2col" id="row1ControlOverview">
 
-      <!-- MODUL 1: EXPERIMENT CONTROL -->
-      <section class="card" id="cardExperimentControl">
+      <!-- KOLOM KIRI: RUN CONTROL PANEL (FORM PENGATURAN) -->
+      <section class="card panel-run-control" id="panelRunControl">
         <div class="card-header">
           <div>
             <div class="card-title">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 20v-6M6 20V10M18 20V4"/></svg>
-              Kontrol Eksperimen
+              Run Control Panel
             </div>
-            <div class="card-subtitle">Konfigurasi algoritma federasi & hyperparameter pelatihan</div>
+            <div class="card-subtitle">Konfigurasi algoritma federasi, hyperparameter, dan node klien aktif</div>
           </div>
+          <span class="badge-status online" id="ctrlStatusBadge">Siap Dijalankan</span>
         </div>
 
         <div class="card-body">
           <form id="formExperimentControl">
-            <!-- Pilihan Algoritma Federasi (Grid 6 Metode) -->
+            <!-- Pilihan Algoritma Federasi (Grid 7 Metode) -->
             <div class="form-group full-width">
               <label class="label-heading">Algoritma Federated Learning</label>
               <div class="strategy-selector-grid">
@@ -121,21 +154,21 @@
               </div>
             </div>
 
-            <!-- MODULAR OPTIONS PANEL (Menyesuaikan otomatis dengan algoritma yang dipilih) -->
+            <!-- MODULAR OPTIONS PANEL: Menyesuaikan parameter khusus algoritma terpilih -->
             <div class="modular-params-panel" id="modularParamsPanel">
               <div class="modular-header">
-                <span class="modular-title" id="modularTitle">Parameter Khusus Algoritma: FedBN</span>
-                <span class="modular-badge" id="modularBadge">Local Parameters</span>
+                <span class="modular-title" id="modularTitle">Parameter Khusus: FedBN</span>
+                <span class="modular-badge" id="modularBadge">Personalized BN</span>
               </div>
               <div class="modular-body" id="modularBody">
-                <!-- Konten dinamis dirender lewat app.js -->
+                <!-- Dirender dinamis lewat JS -->
               </div>
             </div>
 
             <!-- Hyperparameters Grid Padat -->
             <div class="hyperparam-grid">
               <div class="form-group">
-                <label for="inputNumRounds">Ronde (Rounds)</label>
+                <label for="inputNumRounds">Jumlah Ronde</label>
                 <input type="number" id="inputNumRounds" name="num_rounds" min="1" max="200" value="50" required>
               </div>
 
@@ -145,146 +178,651 @@
               </div>
 
               <div class="form-group">
+                <label for="inputBatchSize">Batch Size</label>
+                <input type="number" id="inputBatchSize" name="batch_size" min="8" max="256" step="8" value="32" required>
+              </div>
+
+              <div class="form-group">
                 <label for="inputLearningRate">Learning Rate</label>
                 <input type="number" id="inputLearningRate" name="learning_rate" step="0.0001" min="0.00001" max="0.1" value="0.001" required>
               </div>
 
               <div class="form-group">
-                <label for="inputBatchSize">Batch Size</label>
-                <input type="number" id="inputBatchSize" name="batch_size" min="8" max="256" step="8" value="32" required>
+                <label for="inputProximalMu">Mu / Proximal Term</label>
+                <input type="number" id="inputProximalMu" name="proximal_mu" step="0.001" min="0" max="1.0" value="0.01">
+              </div>
+
+              <div class="form-group">
+                <label for="inputRandomSeed">Random Seed</label>
+                <input type="number" id="inputRandomSeed" name="seed" min="0" max="99999" value="42">
               </div>
             </div>
 
-            <!-- Tombol Eksekusi -->
+            <!-- CHECKLIST CLIENT AKTIF -->
+            <div class="form-group full-width client-toggles-wrapper">
+              <label class="label-heading">Checklist Node Klien yang Berpartisipasi</label>
+              <div class="client-toggles-grid">
+                <label class="client-checkbox-card" id="chkWrapVm2">
+                  <input type="checkbox" id="chkClientVm2" name="active_clients" value="vm2" checked>
+                  <div class="chk-content">
+                    <span class="chk-title">Client 1: PTB-XL</span>
+                    <span class="chk-meta">10.34.100.122 • 19,532 Sampel (Feature Shift)</span>
+                  </div>
+                </label>
+
+                <label class="client-checkbox-card" id="chkWrapVm3">
+                  <input type="checkbox" id="chkClientVm3" name="active_clients" value="vm3" checked>
+                  <div class="chk-content">
+                    <span class="chk-title">Client 2: Chapman-Ningbo</span>
+                    <span class="chk-meta">10.34.100.123 • 44,180 Sampel (Label Skew)</span>
+                  </div>
+                </label>
+
+                <label class="client-checkbox-card" id="chkWrapVm4">
+                  <input type="checkbox" id="chkClientVm4" name="active_clients" value="vm4" checked>
+                  <div class="chk-content">
+                    <span class="chk-title">Client 3: G12EC</span>
+                    <span class="chk-meta">10.34.100.125 • 9,355 Sampel (Duration Skew)</span>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <!-- Tombol Aksi Form -->
             <div class="action-buttons-row">
               <button type="button" class="btn btn-primary" id="btnStartTraining">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                Mulai Pelatihan
+                Mulai Eksperimen
               </button>
-              <button type="button" class="btn btn-danger" id="btnStopTraining" disabled>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-                Hentikan Proses
+              <button type="button" class="btn btn-secondary-accent" id="btnQueueRun" title="Masukkan parameter run ini ke antrean eksekusi">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                Antrikan Run
               </button>
               <button type="button" class="btn btn-secondary" id="btnResetExperiment">
-                Reset
+                Reset Config
               </button>
             </div>
           </form>
         </div>
       </section>
 
-      <!-- MODUL 2: CLIENT STATUS & TELEMETRI -->
-      <section class="card" id="cardClientDashboard">
+      <!-- KOLOM KANAN: RUN OVERVIEW (PROGRESS LIVE) -->
+      <section class="card panel-run-overview" id="panelRunOverview">
         <div class="card-header">
           <div>
             <div class="card-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-              Status Node Klien (Cross-Silo)
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 14"/></svg>
+              Run Overview & Progress Live
             </div>
-            <div class="card-subtitle">Konektivitas gRPC & telemetri pelatihan lokal 3 VM</div>
+            <div class="card-subtitle">Pemantauan eksekusi federasi, estimasi durasi, dan siklus pipeline ronde</div>
           </div>
-          <span class="badge-status offline" id="clientsConnectedSummary">0 / 3 Klien Aktif</span>
+          <span class="badge-status online" id="overviewActiveStratBadge">FEDBN</span>
         </div>
 
         <div class="card-body">
-          <div class="client-nodes-stack">
-            <!-- VM 2: PTB-XL -->
-            <div class="client-node-row is-offline" id="clientNodeVm2">
-              <div class="node-main-info">
-                <div class="node-id-badge">C1</div>
-                <div>
-                  <div class="node-title">VM 2 — PTB-XL</div>
-                  <div class="node-meta">10.34.100.122 • 19,532 sampel (Feature Shift)</div>
-                </div>
-              </div>
-              <div class="node-telemetry-mono" id="timingVm2">Menunggu Ronde 1...</div>
-              <span class="badge-status offline" id="badgeVm2">Offline</span>
+          <!-- Metrik Angka Besar (Grid 4 Card) -->
+          <div class="big-metrics-grid">
+            <div class="metric-card">
+              <span class="metric-label">Ronde Berjalan</span>
+              <div class="metric-value-huge" id="overviewRoundVal">Standby</div>
+              <span class="metric-sub" id="overviewRoundSub">Target: 50 Ronde</span>
             </div>
 
-            <!-- VM 3: Chapman-Shaoxing -->
-            <div class="client-node-row is-offline" id="clientNodeVm3">
-              <div class="node-main-info">
-                <div class="node-id-badge">C2</div>
-                <div>
-                  <div class="node-title">VM 3 — Chapman-Shaoxing</div>
-                  <div class="node-meta">10.34.100.123 • 44,180 sampel (Label Skew)</div>
-                </div>
-              </div>
-              <div class="node-telemetry-mono" id="timingVm3">Menunggu Ronde 1...</div>
-              <span class="badge-status offline" id="badgeVm3">Offline</span>
+            <div class="metric-card">
+              <span class="metric-label">Elapsed / ETA Selesai</span>
+              <div class="metric-value-huge highlight" id="overviewTimeVal">00m 00s</div>
+              <span class="metric-sub" id="overviewEtaSub">Estimasi: Siap dimulai</span>
             </div>
 
-            <!-- VM 4: G12EC -->
-            <div class="client-node-row is-offline" id="clientNodeVm4">
-              <div class="node-main-info">
-                <div class="node-id-badge">C3</div>
-                <div>
-                  <div class="node-title">VM 4 — G12EC (CinC 2020)</div>
-                  <div class="node-meta">10.34.100.125 • 9,355 sampel (Duration Skew)</div>
-                </div>
-              </div>
-              <div class="node-telemetry-mono" id="timingVm4">Menunggu Ronde 1...</div>
-              <span class="badge-status offline" id="badgeVm4">Offline</span>
+            <div class="metric-card">
+              <span class="metric-label">Kecepatan Pelatihan</span>
+              <div class="metric-value-huge" id="overviewSpeedVal">--</div>
+              <span class="metric-sub" id="overviewSpeedSub">Detik / ronde federasi</span>
+            </div>
+
+            <div class="metric-card">
+              <span class="metric-label">Partisipasi Klien</span>
+              <div class="metric-value-huge" id="overviewClientsVal">0 / 3</div>
+              <span class="metric-sub" id="overviewClientsSub">Semua silo siap</span>
             </div>
           </div>
 
-          <!-- Progress Bar Ronde & ETA -->
-          <div class="progress-section">
-            <div class="progress-labels">
-              <span id="progressRoundText">Ronde Federasi: Standby</span>
-              <span id="progressPercentText" class="progress-percent">0%</span>
+          <!-- Progress Visual Ganda (Total Progress + Local Round Progress) -->
+          <div class="dual-progress-section">
+            <!-- Progress Bar 1: Total Training -->
+            <div class="progress-bar-group">
+              <div class="progress-labels">
+                <span class="label-title">Total Progress Training:</span>
+                <span class="label-percent mono" id="progressTotalPct">0%</span>
+              </div>
+              <div class="progress-track">
+                <div class="progress-fill fill-primary" id="progressTotalFill" style="width: 0%;"></div>
+              </div>
             </div>
-            <div class="progress-track">
-              <div class="progress-fill" id="progressBarFill" style="width: 0%;"></div>
+
+            <!-- Progress Bar 2: Local Round Batch Progress -->
+            <div class="progress-bar-group">
+              <div class="progress-labels">
+                <span class="label-title">Progress Ronde Lokal Berjalan:</span>
+                <span class="label-percent mono" id="progressBatchPct">0% (Standby)</span>
+              </div>
+              <div class="progress-track track-subtle">
+                <div class="progress-fill fill-secondary" id="progressBatchFill" style="width: 0%;"></div>
+              </div>
             </div>
-            <div class="progress-metrics-strip">
-              <span>Estimasi Selesai: <strong id="progressEtaText">Siap dimulai</strong></span>
-              <span id="progressSpeedText">Kecepatan: --</span>
+          </div>
+
+          <!-- STATUS FASE SAAT INI (VISUAL STEPPER PIPELINE) -->
+          <div class="pipeline-stepper-box">
+            <div class="stepper-header">
+              <span class="stepper-label">Siklus Fase Saat Ini:</span>
+              <span class="phase-active-tag" id="activePhaseBadge">Standby (Idle)</span>
             </div>
+
+            <div class="pipeline-steps-track" id="pipelineStepsTrack">
+              <div class="step-item" id="stepBroadcast">
+                <div class="step-dot">1</div>
+                <div class="step-info">
+                  <div class="step-name">Broadcasting</div>
+                  <div class="step-desc">Kirim bobot global $W_t$</div>
+                </div>
+              </div>
+
+              <div class="step-divider"></div>
+
+              <div class="step-item" id="stepLocalTrain">
+                <div class="step-dot">2</div>
+                <div class="step-info">
+                  <div class="step-name">Local Training</div>
+                  <div class="step-desc">Epoch lokal di 3 VM</div>
+                </div>
+              </div>
+
+              <div class="step-divider"></div>
+
+              <div class="step-item" id="stepAggregate">
+                <div class="step-dot">3</div>
+                <div class="step-info">
+                  <div class="step-name">Aggregating</div>
+                  <div class="step-desc">Agregasi server Flower</div>
+                </div>
+              </div>
+
+              <div class="step-divider"></div>
+
+              <div class="step-item" id="stepEvaluation">
+                <div class="step-dot">4</div>
+                <div class="step-info">
+                  <div class="step-name">Evaluation</div>
+                  <div class="step-desc">Simpan Checkpoint Model</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+    </div>
+
+    <!-- ==============================================================================
+         3. TOPOLOGI JARINGAN & METRIK NODE KLIEN (ROW 2 - MINI GRAFANA / NODE EXPORTER)
+         ============================================================================== -->
+    <section class="card full-width" id="row2NodeExporter">
+      <div class="card-header">
+        <div>
+          <div class="card-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            Topologi Jaringan & Metrik Node Klien (Mini Grafana / Node Exporter)
+          </div>
+          <div class="card-subtitle">
+            Telemetri utilisasi sumber daya, konektivitas gRPC Flower Server, dan karakteristik non-IID 4 Virtual Machine (10.34.100.0/24)
+          </div>
+        </div>
+        <div class="header-actions-group">
+          <span class="badge-status online" id="clusterTotalSamplesBadge">73,067 Sampel 12-Lead</span>
+          <span class="badge-status online">Subnet: 10.34.100.0/24</span>
+        </div>
+      </div>
+
+      <div class="card-body">
+        <!-- 4 NODE CARDS GRID (Pusat Topologi & 3 Klien) -->
+        <div class="exporter-nodes-grid">
+
+          <!-- CARD 1: SERVER ORCHESTRATOR (VM 1) -->
+          <div class="exporter-node-card is-server is-online" id="exporterCardVm1">
+            <div class="node-card-top">
+              <div class="node-badge-role srv-role">CENTRAL ORCHESTRATOR</div>
+              <span class="badge-status online" id="badgeVm1">Standby</span>
+            </div>
+
+            <div class="node-card-main">
+              <div class="node-icon-wrapper server-bg">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+              </div>
+              <div>
+                <h3 class="node-host-title">VM 1 — Flower Server</h3>
+                <div class="node-host-ip mono">10.34.100.114 • Container: fl-dashboard</div>
+              </div>
+            </div>
+
+            <div class="node-telemetry-strip" id="timingVm1">
+              Flower gRPC :8080 • Web UI :8501 • Standby
+            </div>
+
+            <!-- Grafana Resource Gauges -->
+            <div class="resource-gauges-container">
+              <!-- RAM Gauge Bar -->
+              <div class="gauge-row">
+                <div class="gauge-labels">
+                  <span class="gauge-name">RAM Terpakai:</span>
+                  <span class="gauge-stat mono" id="serverRamStat">34.5% (2.8 GB / 8.0 GB)</span>
+                </div>
+                <div class="gauge-track">
+                  <div class="gauge-fill fill-ram" id="serverRamFill" style="width: 34.5%;"></div>
+                </div>
+              </div>
+
+              <!-- CPU / Activity Load -->
+              <div class="gauge-row">
+                <div class="gauge-labels">
+                  <span class="gauge-name">CPU Load:</span>
+                  <span class="gauge-stat mono" id="serverCpuStat">6% Core Load</span>
+                </div>
+                <div class="gauge-track">
+                  <div class="gauge-fill fill-cpu" id="serverCpuFill" style="width: 6%;"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="node-card-footer">
+              <div class="footer-meta">
+                <span>Agregasi: <strong>FedAvg/Prox/SCAFFOLD/BN/BB/SOL</strong></span>
+                <span>Mount: <code class="mono">results/</code>, <code class="mono">logs/</code></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- CARD 2: VM 2 (CLIENT 1 - PTB-XL) -->
+          <div class="exporter-node-card is-client is-offline" id="exporterCardVm2">
+            <div class="node-card-top">
+              <div class="node-badge-role client-role">NODE SILO 1 (C1)</div>
+              <span class="badge-status offline" id="badgeVm2">Offline</span>
+            </div>
+
+            <div class="node-card-main">
+              <div class="node-icon-wrapper client-bg">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              </div>
+              <div>
+                <h3 class="node-host-title">VM 2 — PTB-XL</h3>
+                <div class="node-host-ip mono">10.34.100.122 • 19,532 Sampel</div>
+              </div>
+            </div>
+
+            <div class="node-telemetry-strip" id="timingVm2">
+              Menunggu Sesi Training Dimulai...
+            </div>
+
+            <!-- Grafana Resource Gauges -->
+            <div class="resource-gauges-container">
+              <div class="gauge-row">
+                <div class="gauge-labels">
+                  <span class="gauge-name">RAM Terpakai:</span>
+                  <span class="gauge-stat mono" id="ramStatVm2">39.0% (3.1 GB / 8.0 GB)</span>
+                </div>
+                <div class="gauge-track">
+                  <div class="gauge-fill fill-ram" id="ramFillVm2" style="width: 39%;"></div>
+                </div>
+              </div>
+
+              <div class="gauge-row">
+                <div class="gauge-labels">
+                  <span class="gauge-name">CPU Load:</span>
+                  <span class="gauge-stat mono" id="cpuStatVm2">12% Load</span>
+                </div>
+                <div class="gauge-track">
+                  <div class="gauge-fill fill-cpu" id="cpuFillVm2" style="width: 12%;"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Non-IID Badge & Expand Button -->
+            <div class="node-card-footer">
+              <span class="non-iid-pill tag-feature">Feature Shift</span>
+              <button type="button" class="btn btn-secondary btn-xs btn-expand-dataset" data-client="vm2">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                Detail 27 Kelas
+              </button>
+            </div>
+          </div>
+
+          <!-- CARD 3: VM 3 (CLIENT 2 - CHAPMAN-NINGBO) -->
+          <div class="exporter-node-card is-client is-offline" id="exporterCardVm3">
+            <div class="node-card-top">
+              <div class="node-badge-role client-role">NODE SILO 2 (C2)</div>
+              <span class="badge-status offline" id="badgeVm3">Offline</span>
+            </div>
+
+            <div class="node-card-main">
+              <div class="node-icon-wrapper client-bg">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              </div>
+              <div>
+                <h3 class="node-host-title">VM 3 — Chapman-Ningbo</h3>
+                <div class="node-host-ip mono">10.34.100.123 • 44,180 Sampel</div>
+              </div>
+            </div>
+
+            <div class="node-telemetry-strip" id="timingVm3">
+              Menunggu Sesi Training Dimulai...
+            </div>
+
+            <!-- Grafana Resource Gauges -->
+            <div class="resource-gauges-container">
+              <div class="gauge-row">
+                <div class="gauge-labels">
+                  <span class="gauge-name">RAM Terpakai:</span>
+                  <span class="gauge-stat mono" id="ramStatVm3">44.0% (3.5 GB / 8.0 GB)</span>
+                </div>
+                <div class="gauge-track">
+                  <div class="gauge-fill fill-ram" id="ramFillVm3" style="width: 44%;"></div>
+                </div>
+              </div>
+
+              <div class="gauge-row">
+                <div class="gauge-labels">
+                  <span class="gauge-name">CPU Load:</span>
+                  <span class="gauge-stat mono" id="cpuStatVm3">14% Load</span>
+                </div>
+                <div class="gauge-track">
+                  <div class="gauge-fill fill-cpu" id="cpuFillVm3" style="width: 14%;"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Non-IID Badge & Expand Button -->
+            <div class="node-card-footer">
+              <span class="non-iid-pill tag-label">Label Skew</span>
+              <button type="button" class="btn btn-secondary btn-xs btn-expand-dataset" data-client="vm3">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                Detail 27 Kelas
+              </button>
+            </div>
+          </div>
+
+          <!-- CARD 4: VM 4 (CLIENT 3 - G12EC) -->
+          <div class="exporter-node-card is-client is-offline" id="exporterCardVm4">
+            <div class="node-card-top">
+              <div class="node-badge-role client-role">NODE SILO 3 (C3)</div>
+              <span class="badge-status offline" id="badgeVm4">Offline</span>
+            </div>
+
+            <div class="node-card-main">
+              <div class="node-icon-wrapper client-bg">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              </div>
+              <div>
+                <h3 class="node-host-title">VM 4 — G12EC (CinC 2020)</h3>
+                <div class="node-host-ip mono">10.34.100.125 • 9,355 Sampel</div>
+              </div>
+            </div>
+
+            <div class="node-telemetry-strip" id="timingVm4">
+              Menunggu Sesi Training Dimulai...
+            </div>
+
+            <!-- Grafana Resource Gauges -->
+            <div class="resource-gauges-container">
+              <div class="gauge-row">
+                <div class="gauge-labels">
+                  <span class="gauge-name">RAM Terpakai:</span>
+                  <span class="gauge-stat mono" id="ramStatVm4">33.6% (2.7 GB / 8.0 GB)</span>
+                </div>
+                <div class="gauge-track">
+                  <div class="gauge-fill fill-ram" id="ramFillVm4" style="width: 33.6%;"></div>
+                </div>
+              </div>
+
+              <div class="gauge-row">
+                <div class="gauge-labels">
+                  <span class="gauge-name">CPU Load:</span>
+                  <span class="gauge-stat mono" id="cpuStatVm4">10% Load</span>
+                </div>
+                <div class="gauge-track">
+                  <div class="gauge-fill fill-cpu" id="cpuFillVm4" style="width: 10%;"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Non-IID Badge & Expand Button -->
+            <div class="node-card-footer">
+              <span class="non-iid-pill tag-duration">Duration Skew</span>
+              <button type="button" class="btn btn-secondary btn-xs btn-expand-dataset" data-client="vm4">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                Detail 27 Kelas
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ==============================================================================
+         4. METRIK EVALUASI & GRAFIK REAL-TIME (ROW 3)
+         ============================================================================== -->
+    <div class="row-grid-2col row-metrics-leaderboard" id="row3MetricsLeaderboard">
+
+      <!-- MODUL GRAFIK GARIS SINKRON -->
+      <section class="card panel-metrics-chart" id="cardMetricsPlots">
+        <div class="card-header">
+          <div>
+            <div class="card-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+              Kurva Konvergensi Metrik Real-Time
+            </div>
+            <div class="card-subtitle" id="metricPlotSubtitle">Performa model global dan per-client convergence untuk deteksi drift</div>
+          </div>
+
+          <div class="chart-controls-wrapper">
+            <!-- Run Selector (Live vs Archive) -->
+            <div class="run-selector-box">
+              <label for="chartRunSelector" class="form-label-xs">Sesi:</label>
+              <select id="chartRunSelector" class="form-select-sm">
+                <option value="latest">⚡ Sesi Terakhir (Live / Default)</option>
+              </select>
+            </div>
+
+            <!-- Metric Switcher -->
+            <div class="segmented-control metric-control" id="chartMetricTabs">
+              <button class="seg-btn active" data-metric="f1">Macro-F1</button>
+              <button class="seg-btn" data-metric="auroc">AUROC</button>
+              <button class="seg-btn" data-metric="loss">Loss</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <!-- PER-CLIENT CONVERGENCE CHECKLIST STRIP -->
+          <div class="convergence-toggles-strip">
+            <span class="conv-label">Visibilitas Garis:</span>
+            <label class="conv-check conv-global">
+              <input type="checkbox" id="chkShowGlobal" checked>
+              <span class="conv-pill pill-global">Global Model</span>
+            </label>
+            <label class="conv-check conv-ptbxl">
+              <input type="checkbox" id="chkShowVm2" checked>
+              <span class="conv-pill pill-vm2">PTB-XL (VM 2)</span>
+            </label>
+            <label class="conv-check conv-chapman">
+              <input type="checkbox" id="chkShowVm3" checked>
+              <span class="conv-pill pill-vm3">Chapman (VM 3)</span>
+            </label>
+            <label class="conv-check conv-g12ec">
+              <input type="checkbox" id="chkShowVm4" checked>
+              <span class="conv-pill pill-vm4">G12EC (VM 4)</span>
+            </label>
+          </div>
+
+          <!-- Inspect Archive Banner -->
+          <div class="inspect-banner" id="inspectBanner" style="display: none;">
+            <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+              <span class="badge-status online" style="font-size: 0.65rem;">ARSIP HISTORIS</span>
+              <span>Run: <strong id="inspectRunId" class="mono">--</strong></span>
+              <span id="inspectRunDetails" class="text-muted"></span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+              <button type="button" class="btn-link" id="btnExitInspect" style="color: #ef4444; font-weight: 600;">✕ Kembali ke Sesi Terakhir</button>
+            </div>
+          </div>
+
+          <!-- Canvas Chart -->
+          <div class="chart-wrapper">
+            <canvas id="liveMetricChart"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <!-- MODUL TABEL KOMPARASI MODEL (LEADERBOARD) -->
+      <section class="card panel-leaderboard" id="cardBenchmarkComparison">
+        <div class="card-header">
+          <div>
+            <div class="card-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/><path d="M3 20h18"/></svg>
+              Tabel Komparasi Model (Leaderboard)
+            </div>
+            <div class="card-subtitle">
+              Peringkat evaluasi empiris 6 algoritma FL terhadap heterogenitas klinis EKG
+            </div>
+          </div>
+          <div class="header-actions-group">
+            <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshBenchmark" title="Segarkan tabel leaderboard">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Segarkan
+            </button>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="compact-table" id="benchmarkTable">
+              <thead>
+                <tr>
+                  <th>Metode</th>
+                  <th>Target Heterogenitas</th>
+                  <th>Ronde Konvergen</th>
+                  <th>Best Macro-F1</th>
+                  <th>AUROC</th>
+                  <th>Val Loss</th>
+                  <th>Waktu Total</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="benchmarkTableBody">
+                <!-- Dynamically populated via JS -->
+              </tbody>
+            </table>
           </div>
         </div>
       </section>
 
     </div>
 
-    <!-- MODUL RIWAYAT EKSPERIMEN (HISTORICAL RUNS - ZERO OVERWRITE) -->
-    <section class="card full-width" id="cardHistoricalRuns">
-      <div class="card-header">
-        <div>
-          <div class="card-title">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
-            Riwayat Eksperimen & Checkpoint Model
-          </div>
-          <div class="card-subtitle">
-            Seluruh run tersimpan permanen di <code>results/runs/</code> (append-only) dan dapat diinspeksi kembali
-          </div>
-        </div>
-        <div class="header-actions-group">
-          <select id="filterHistoryStrategy" class="form-select-sm" title="Filter berdasarkan algoritma">
-            <option value="all">Semua Algoritma</option>
-            <option value="fedavg">FedAvg</option>
-            <option value="fedprox">FedProx</option>
-            <option value="scaffold">SCAFFOLD</option>
-            <option value="fedbn">FedBN</option>
-            <option value="fedbb">FedBB</option>
-            <option value="fedsol">FedSOL</option>
-          </select>
-          <select id="filterHistoryStatus" class="form-select-sm" title="Filter berdasarkan status run">
-            <option value="all">Semua Status</option>
-            <option value="completed">Completed (Selesai)</option>
-            <option value="running">Running (Berjalan)</option>
-            <option value="interrupted">Interrupted (Dihentikan)</option>
-            <option value="failed">Failed / Error (Gagal)</option>
-          </select>
-          <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshHistory">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-            Segarkan
-          </button>
-        </div>
+  </main>
+
+  <!-- ==============================================================================
+       5. DRAWER BAWAH: LOG TERMINAL & RIWAYAT (ROW 4 / COLLAPSIBLE BOTTOM PANEL)
+       ============================================================================== -->
+  <section class="bottom-collapsible-drawer is-minimized" id="bottomDrawerPanel">
+    <!-- Drawer Toggle Header Bar -->
+    <div class="drawer-header" id="drawerHeaderToggle">
+      <div class="drawer-title-group">
+        <button type="button" class="btn-drawer-collapse" id="btnToggleDrawer" aria-label="Toggle Bottom Drawer">
+          <span class="chevron-icon" id="drawerChevronIcon">▲</span>
+        </button>
+        <span class="drawer-heading">Konsol Sistem & Riwayat Eksekusi</span>
+        <span class="drawer-status-dot pulse-dot"></span>
+        <span class="drawer-subtext" id="drawerStatusSummary">Flower Server Standby • Riwayat Siap</span>
       </div>
 
-      <div class="card-body">
-        <div class="table-responsive">
+      <!-- Drawer Tabs -->
+      <div class="drawer-tabs-wrapper">
+        <button type="button" class="drawer-tab active" data-drawertab="logs" id="tabDrawerLogs">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+          Live Terminal Log
+        </button>
+        <button type="button" class="drawer-tab" data-drawertab="history" id="tabDrawerHistory">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
+          Experiment History & Artifacts
+        </button>
+      </div>
+
+      <div class="drawer-actions-right">
+        <button type="button" class="btn btn-secondary btn-xs" id="btnToggleDrawerSize">Layar Penuh</button>
+      </div>
+    </div>
+
+    <!-- Drawer Content Body -->
+    <div class="drawer-body" id="drawerBody">
+
+      <!-- TAB 1: LIVE TERMINAL LOG -->
+      <div class="drawer-tab-content active" id="contentDrawerLogs">
+        <div class="terminal-toolbar">
+          <div class="segmented-control" id="logSourceTabs">
+            <button class="seg-btn active" data-source="server">Server</button>
+            <button class="seg-btn" data-source="vm2">VM 2</button>
+            <button class="seg-btn" data-source="vm3">VM 3</button>
+            <button class="seg-btn" data-source="vm4">VM 4</button>
+            <button class="seg-btn" data-source="all">Semua Node</button>
+          </div>
+
+          <div class="terminal-tools-right">
+            <label class="terminal-checkbox">
+              <input type="checkbox" id="chkAutoScroll" checked>
+              <span>Auto-scroll</span>
+            </label>
+            <button type="button" class="btn btn-secondary btn-xs" id="btnClearLog">Bersihkan</button>
+            <button type="button" class="btn btn-secondary btn-xs" id="btnDownloadModel" title="Unduh checkpoint model terbaik sesi aktif">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              best.pt
+            </button>
+          </div>
+        </div>
+
+        <div class="terminal-console-wrapper" id="logStreamBox">Menunggu sesi training dimulai...
+[SERVER] Flower Server & Dashboard siap menerima parameter dari Run Control Panel.</div>
+      </div>
+
+      <!-- TAB 2: EXPERIMENT HISTORY & ARTIFACTS -->
+      <div class="drawer-tab-content" id="contentDrawerHistory" style="display: none;">
+        <div class="history-toolbar">
+          <div class="history-filters">
+            <select id="filterHistoryStrategy" class="form-select-sm">
+              <option value="all">Semua Algoritma</option>
+              <option value="fedavg">FedAvg</option>
+              <option value="fedprox">FedProx</option>
+              <option value="scaffold">SCAFFOLD</option>
+              <option value="fedbn">FedBN</option>
+              <option value="fedbb">FedBB</option>
+              <option value="fedsol">FedSOL</option>
+            </select>
+            <select id="filterHistoryStatus" class="form-select-sm">
+              <option value="all">Semua Status</option>
+              <option value="completed">Completed (Selesai)</option>
+              <option value="running">Running (Berjalan)</option>
+              <option value="interrupted">Interrupted (Dihentikan)</option>
+              <option value="failed">Failed / Error (Gagal)</option>
+            </select>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshHistory">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Segarkan Riwayat
+            </button>
+          </div>
+          <span class="text-muted" style="font-size: 0.72rem;">Hasil tersimpan append-only di <code>results/runs/</code></span>
+        </div>
+
+        <div class="table-responsive" style="max-height: 280px; overflow-y: auto;">
           <table class="compact-table" id="tableHistoryRuns">
             <thead>
               <tr>
@@ -301,205 +839,85 @@
             </thead>
             <tbody id="historyTableBody">
               <tr>
-                <td colspan="9" class="text-center text-muted" style="padding: 1.5rem;">Memuat daftar riwayat eksperimen...</td>
+                <td colspan="9" class="text-center text-muted" style="padding: 1.5rem;">Memuat daftar riwayat eksekusi...</td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
-    </section>
-
-    <!-- MODUL BENCHMARK KOMPARATIF 6 ALGORITMA -->
-    <section class="card full-width" id="cardBenchmarkComparison">
-      <div class="card-header">
-        <div>
-          <div class="card-title">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/><path d="M3 20h18"/></svg>
-            Tabel Komparasi Algoritma
-          </div>
-          <div class="card-subtitle">
-            Evaluasi empiris multi-dataset 12-lead EKG terhadap tantangan heterogenitas klinis
-          </div>
-        </div>
-        <div class="header-actions-group">
-          <span class="badge-status online" id="benchmarkActiveBadge">Aktif: FEDBN</span>
-          <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshBenchmark">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-            Segarkan
-          </button>
-        </div>
-      </div>
-
-      <div class="card-body">
-        <div class="table-responsive">
-          <table class="compact-table" id="benchmarkTable">
-            <thead>
-              <tr>
-                <th>Algoritma</th>
-                <th>Mekanisme Khusus</th>
-                <th>Target Heterogenitas</th>
-                <th>Best Macro-F1</th>
-                <th>AUROC</th>
-                <th>Val Loss</th>
-                <th>Durasi/Ronde</th>
-                <th>Total Run</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="benchmarkTableBody">
-              <!-- Dynamically populated via JS -->
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <!-- BOTTOM GRID: [3] Grafik Konvergensi + [4] Terminal Log & Model -->
-    <div class="bottom-grid">
-
-      <!-- MODUL 3: GRAFIK KONVERGENSI METRIK -->
-      <section class="card" id="cardMetricsPlots">
-        <div class="card-header">
-          <div>
-            <div class="card-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-              Grafik Konvergensi Metrik
-            </div>
-            <div class="card-subtitle" id="metricPlotSubtitle">Kurva performa konvergensi model global & per-node VM</div>
-          </div>
-          
-          <div class="chart-controls-wrapper">
-            <!-- Selector Run Historis / Live -->
-            <div class="run-selector-box" title="Pilih sesi eksperimen aktif atau buka grafik hasil lampau">
-              <label for="chartRunSelector" class="form-label-xs">Sesi:</label>
-              <select id="chartRunSelector" class="form-select-sm" style="font-weight: 600; min-width: 190px;">
-                <option value="latest">⚡ Sesi Terakhir (Live / Default)</option>
-              </select>
-            </div>
-
-            <!-- Mode Switcher -->
-            <div class="segmented-control" id="chartModeTabs">
-              <button class="seg-btn active" data-mode="strategy">Global</button>
-              <button class="seg-btn" data-mode="fedavg_vm">FedAvg</button>
-              <button class="seg-btn" data-mode="fedprox_vm">FedProx</button>
-              <button class="seg-btn" data-mode="scaffold_vm">SCAFFOLD</button>
-              <button class="seg-btn" data-mode="fedbn_vm">FedBN</button>
-              <button class="seg-btn" data-mode="fedbb_vm">FedBB</button>
-              <button class="seg-btn" data-mode="fedsol_vm">FedSOL</button>
-            </div>
-            <!-- Metric Switcher -->
-            <div class="segmented-control metric-control">
-              <button class="seg-btn active" data-metric="f1">Macro-F1</button>
-              <button class="seg-btn" data-metric="auroc">AUROC</button>
-              <button class="seg-btn" data-metric="loss">Loss</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="card-body">
-          <!-- Active Inspect Ribbon (muncul jika user memilih salah satu run lampau) -->
-          <div class="inspect-banner" id="inspectBanner" style="display: none;">
-            <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-              <span class="badge-status online" style="font-size: 0.65rem;">ARSIP HISTORIS</span>
-              <span>Run: <strong id="inspectRunId" class="mono">--</strong></span>
-              <span id="inspectRunDetails" class="text-muted"></span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 0.6rem;">
-              <button type="button" class="btn btn-secondary btn-sm" id="btnModalInspect" style="padding: 0.15rem 0.5rem; font-size: 0.68rem;">
-                🔍 Layar Penuh
-              </button>
-              <button type="button" class="btn-link" id="btnExitInspect" style="color: #dc2626; font-weight: 600;">✕ Kembali ke Sesi Terakhir</button>
-            </div>
-          </div>
-
-          <div class="chart-wrapper">
-            <canvas id="liveMetricChart"></canvas>
-          </div>
-        </div>
-      </section>
-
-      <!-- MODUL 4: LOG TERMINAL & DOWNLOAD MODEL -->
-      <section class="card" id="cardModelLogs">
-        <div class="card-header">
-          <div>
-            <div class="card-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-              Live Terminal Log
-            </div>
-            <div class="card-subtitle">Output real-time Flower Server & klien federasi</div>
-          </div>
-          <div class="header-actions-group">
-            <div class="segmented-control" id="logSourceTabs">
-              <button class="seg-btn active" data-source="server">Server</button>
-              <button class="seg-btn" data-source="vm2">VM 2</button>
-              <button class="seg-btn" data-source="vm3">VM 3</button>
-              <button class="seg-btn" data-source="vm4">VM 4</button>
-              <button class="seg-btn" data-source="all">Semua</button>
-            </div>
-            <button class="btn btn-secondary btn-sm" id="btnDownloadModel" title="Unduh checkpoint model terbaik sesi aktif">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              best.pt
-            </button>
-          </div>
-        </div>
-
-        <div class="card-body">
-          <div class="terminal-log-box" id="logStreamBox">Menunggu sesi training dimulai...
-[SERVER] Siap menerima perintah dari Control Panel.</div>
-        </div>
-      </section>
 
     </div>
+  </section>
 
-  <!-- MODAL GRAFIK DETAIL RUN HISTORIS -->
-  <div class="modal-backdrop" id="runDetailModal" style="display: none;">
-    <div class="modal-card">
+  <!-- ==============================================================================
+       MODAL EXPAND: DETAIL DATASET & RASIO DISTRIBUSI 27 KELAS
+       ============================================================================== -->
+  <div class="modal-backdrop" id="datasetDetailModal" style="display: none;">
+    <div class="modal-card modal-lg">
       <div class="modal-header">
         <div>
           <div class="modal-title">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-            <span id="modalRunTitle">Detail Grafik Eksperimen</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+            <span id="dsModalTitle">Detail Dataset & Analisis Non-IID</span>
           </div>
-          <div class="modal-subtitle" id="modalRunSubtitle">Inspeksi kurva konvergensi lengkap dan parameter run</div>
+          <div class="modal-subtitle" id="dsModalSubtitle">Karakteristik multi-dataset 12-lead EKG dan distribusi 27 kelas klinis</div>
         </div>
-        <button type="button" class="modal-close-btn" id="btnModalClose">&times;</button>
+        <button type="button" class="modal-close-btn" id="btnDsModalClose">&times;</button>
       </div>
 
       <div class="modal-body">
-        <!-- Metadata summary pills -->
-        <div class="modal-meta-bar" id="modalMetaBar"></div>
-
-        <!-- Controls: Metric tabs & Downloads -->
-        <div class="modal-controls-bar">
-          <div class="segmented-control" id="modalMetricTabs">
-            <button class="seg-btn active" data-metric="f1">Macro-F1</button>
-            <button class="seg-btn" data-metric="auroc">AUROC</button>
-            <button class="seg-btn" data-metric="loss">Validation Loss</button>
+        <!-- Overview Banner -->
+        <div class="dataset-meta-cards-row">
+          <div class="ds-meta-pill">
+            <span class="ds-label">Dataset:</span>
+            <strong id="dsMetaName">--</strong>
           </div>
-          <div class="modal-actions-right" style="display: flex; gap: 0.4rem;">
-            <a id="modalDownloadModelBtn" class="btn btn-secondary btn-sm" href="#" download style="display: none;">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              best.pt
-            </a>
-            <a id="modalDownloadJsonBtn" class="btn btn-secondary btn-sm" href="#" download>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              metrics.json
-            </a>
+          <div class="ds-meta-pill">
+            <span class="ds-label">Total Sampel Latih:</span>
+            <strong id="dsMetaSamples">-- Rekaman</strong>
+          </div>
+          <div class="ds-meta-pill">
+            <span class="ds-label">IP Node / Host:</span>
+            <strong id="dsMetaIp" class="mono">--</strong>
+          </div>
+          <div class="ds-meta-pill">
+            <span class="ds-label">Perlakuan Non-IID:</span>
+            <strong id="dsMetaNonIID" class="highlight">--</strong>
           </div>
         </div>
 
-        <!-- Canvas -->
-        <div class="modal-chart-wrapper">
-          <canvas id="modalMetricChart"></canvas>
+        <!-- Non-IID Treatment Analysis Box -->
+        <div class="non-iid-explanation-box" id="dsNonIidDesc">
+          Memuat analisis heterogenitas klinis...
         </div>
 
-        <!-- Configuration parameter table -->
-        <div class="modal-config-details" id="modalConfigDetails"></div>
+        <!-- 27 Classes Distribution Mini Bar Chart -->
+        <div class="ds-chart-section">
+          <div class="ds-section-title">
+            <span>Rasio Frekuensi Diagnosis 27 Kelas Target EKG</span>
+            <span class="text-muted" style="font-size: 0.68rem;">(Standar PhysioNet / CinC 2020 Multi-Label)</span>
+          </div>
+          <div class="ds-chart-wrapper">
+            <canvas id="datasetClassChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Top Majority vs Minority Classes Table -->
+        <div class="ds-breakdown-grid">
+          <div class="breakdown-card">
+            <h4>Kelas Mayoritas Terbanyak (Top Majority)</h4>
+            <div id="dsMajorityList" class="class-pills-list"></div>
+          </div>
+          <div class="breakdown-card">
+            <h4>Kelas Minoritas Kritis (Top Minority)</h4>
+            <div id="dsMinorityList" class="class-pills-list"></div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
   <!-- Application Logic -->
-  <script src="/static/js/app.js?v=2.4"></script>
+  <script src="/static/js/app.js?v=3.0"></script>
 </body>
 </html>

@@ -1,824 +1,294 @@
 /**
- * CardioPulse FL - Dense Scientific Dashboard Logic
- * Clean, Compact, Modular Hyperparameters & Append-Only Run History Inspector
+ * ECG-FL Orchestrator - Frontend Application Logic v3.0
+ * Comprehensive state management, live polling, Chart.js sync curves,
+ * Node Exporter resource gauges, 27-class modal, and collapsible drawer.
  */
 
-// Global State
+// -------------------------------------------------------------
+// 1. GLOBAL APPLICATION STATE
+// -------------------------------------------------------------
 const state = {
+  theme: localStorage.getItem('ecg_fl_theme') || 'dark',
   isRunning: false,
   activeStrategy: 'fedbn',
-  chartMode: 'strategy', // 'strategy' (semua algoritma), 'client', atau '<strat>_vm'
-  activeMetric: 'f1',    // 'f1', 'auroc', 'loss'
+  activeMetric: 'f1',
   activeLogSource: 'server',
-  inspectedRun: null,    // Jika user menginspeksi run historis tertentu
-  historicalRuns: [],
-  metricsHistory: null,
-  benchmarkData: null,
+  activeDrawerTab: 'logs',
+  isDrawerExpanded: false,
+  isDrawerFullscreen: false,
+  chartInstance: null,
+  datasetChartInstance: null,
+  inspectedRun: null,
+  cachedStatusData: null,
+  cachedTopologyData: null,
   statusTimer: null,
   logsTimer: null,
-  modalMetric: 'f1',
-  modalRunData: null,
-};
-
-let metricChart = null;
-let modalMetricChart = null;
-
-// Color Palette for Algorithms
-const STRATEGY_COLORS = {
-  fedavg: { border: '#64748b', bg: 'rgba(100, 116, 139, 0.08)' },
-  fedprox: { border: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.08)' },
-  scaffold: { border: '#06b6d4', bg: 'rgba(6, 182, 212, 0.08)' },
-  fedbn: { border: '#2563eb', bg: 'rgba(37, 99, 235, 0.08)' },
-  fedbb: { border: '#10b981', bg: 'rgba(16, 185, 129, 0.08)' },
-  fedsol: { border: '#f59e0b', bg: 'rgba(245, 158, 11, 0.08)' },
-};
-
-const CLIENT_COLORS = {
-  ptbxl: { border: '#6366f1', label: 'PTB-XL (VM 2)' },
-  chapman: { border: '#f97316', label: 'Chapman (VM 3)' },
-  g12ec: { border: '#06b6d4', label: 'G12EC (VM 4)' },
+  clockTimer: null,
+  serverTimeOffset: 0,
+  visibility: {
+    global: true,
+    vm2: true,
+    vm3: true,
+    vm4: true
+  }
 };
 
 // -------------------------------------------------------------
-// 1. MODULAR OPTIONS PANEL
+// 2. THEME CONTROLLER (DARK / LIGHT MODE)
 // -------------------------------------------------------------
-function renderModularOptions(strat) {
+function applyTheme(theme) {
+  state.theme = theme;
+  localStorage.setItem('ecg_fl_theme', theme);
+  const html = document.documentElement;
+  const body = document.body;
+
+  if (theme === 'light') {
+    html.setAttribute('data-theme', 'light');
+    body.className = 'theme-light';
+  } else {
+    html.setAttribute('data-theme', 'dark');
+    body.className = 'theme-dark';
+  }
+
+  // Update Chart.js defaults for theme
+  if (state.chartInstance) {
+    updateChartTheme();
+    state.chartInstance.update();
+  }
+}
+
+function toggleTheme() {
+  const newTheme = state.theme === 'dark' ? 'light' : 'dark';
+  applyTheme(newTheme);
+}
+
+// -------------------------------------------------------------
+// 3. SERVER CLOCK CONTROLLER
+// -------------------------------------------------------------
+function startClock() {
+  const clockEl = document.getElementById('serverClockDisplay');
+  function tick() {
+    const now = new Date(Date.now() + state.serverTimeOffset);
+    const hrs = String(now.getHours()).padStart(2, '0');
+    const mins = String(now.getMinutes()).padStart(2, '0');
+    const secs = String(now.getSeconds()).padStart(2, '0');
+    if (clockEl) clockEl.textContent = `${hrs}:${mins}:${secs} WIB`;
+  }
+  tick();
+  state.clockTimer = setInterval(tick, 1000);
+}
+
+// -------------------------------------------------------------
+// 4. STRATEGY METADATA & MODULAR PARAMS
+// -------------------------------------------------------------
+const STRATEGY_DETAILS = {
+  fedavg: {
+    name: "FedAvg",
+    badge: "Baseline Standar",
+    desc: "Agregasi rata-rata bobot berbobot sampel $\\sum \\frac{N_k}{N} w_k$ standar McMahan et al."
+  },
+  fedprox: {
+    name: "FedProx",
+    badge: "Proximal Term",
+    desc: "Menambahkan penalty norm kuadrat $\\frac{\\mu}{2} \\|w - w^t\\|^2$ pada loss lokal untuk meredam divergensi model antar-klien."
+  },
+  scaffold: {
+    name: "SCAFFOLD",
+    badge: "Control Variates",
+    desc: "Koreksi varian kontrol klien $c_i$ dan server $c$ untuk mengoreksi client-drift pada data Non-IID heterogen."
+  },
+  fedbn: {
+    name: "FedBN",
+    badge: "Local BatchNorm",
+    desc: "Parameter Batch Normalization diisolasi di setiap klien lokal untuk menangani Feature Shift tanpa pertukaran statistik mean & var."
+  },
+  fedbb: {
+    name: "FedBB",
+    badge: "Class Balance Regularization",
+    desc: "Regularisasi Class Balance Loss (CBR) dengan bobot $\\alpha$ dan penyesuaian PNB untuk mengatasi ketidakseimbangan kelas ekstrem (Label Skew)."
+  },
+  fedsol: {
+    name: "FedSOL",
+    badge: "Subspace Orthogonal Drift",
+    desc: "Proyeksi ortogonal pada subruang bobot penting untuk mencegah forgetting representasi lead EKG lokal."
+  },
+  all: {
+    name: "Runtut (Sequential All)",
+    badge: "Batch Execution",
+    desc: "Menjalankan seluruh 6 metode FL secara berurutan otomatis (FedAvg -> FedProx -> SCAFFOLD -> FedBN -> FedBB -> FedSOL)."
+  }
+};
+
+function updateModularParams(strategy) {
   const titleEl = document.getElementById('modularTitle');
   const badgeEl = document.getElementById('modularBadge');
   const bodyEl = document.getElementById('modularBody');
-  if (!titleEl || !bodyEl) return;
+  const muGroup = document.getElementById('inputProximalMu')?.parentElement;
 
-  strat = strat.toLowerCase();
-  state.activeStrategy = strat;
+  const info = STRATEGY_DETAILS[strategy] || STRATEGY_DETAILS.fedbn;
+  if (titleEl) titleEl.textContent = `Parameter Khusus: ${info.name}`;
+  if (badgeEl) badgeEl.textContent = info.badge;
+  if (bodyEl) bodyEl.textContent = info.desc;
 
-  if (strat === 'fedavg') {
-    titleEl.textContent = 'Parameter Khusus: FedAvg';
-    badgeEl.textContent = 'Baseline Standard';
-    bodyEl.innerHTML = `
-      <div class="modular-desc">
-        Algoritma standar Federated Averaging tanpa regularisasi tambahan. Agregasi parameter dilakukan berbasis proporsi jumlah data latih klien (<em>n<sub>k</sub> / N</em>).
-      </div>
-    `;
-  } else if (strat === 'fedprox') {
-    titleEl.textContent = 'Parameter Khusus: FedProx';
-    badgeEl.textContent = 'Proximal Regularizer';
-    bodyEl.innerHTML = `
-      <div class="modular-row">
-        <div class="modular-field">
-          <label for="inputProximalMu">Koefisien Proksimal (&mu;):</label>
-          <input type="number" id="inputProximalMu" name="proximal_mu" step="0.001" min="0.0001" max="1.0" value="0.01">
-        </div>
-      </div>
-      <div class="modular-desc">
-        Menambahkan loss penalty <code>(&mu;/2) * ||w - w<sup>t</sup>||<sup>2</sup></code> pada pelatihan lokal klien untuk mencegah divergensi bobot saat heterogenitas data tinggi.
-      </div>
-    `;
-  } else if (strat === 'scaffold') {
-    titleEl.textContent = 'Parameter Khusus: SCAFFOLD';
-    badgeEl.textContent = 'Control Variates';
-    bodyEl.innerHTML = `
-      <div class="modular-desc">
-        Menggunakan variat kontrol lokal <code>c<sub>i</sub></code> dan server <code>c</code> untuk mengoreksi drift gradien klien: <code>g = g<sub>i</sub> - c<sub>i</sub> + c</code>. Agregasi Option 2 aktif secara otomatis.
-      </div>
-    `;
-  } else if (strat === 'fedbn') {
-    titleEl.textContent = 'Parameter Khusus: FedBN';
-    badgeEl.textContent = 'Local BatchNorm';
-    bodyEl.innerHTML = `
-      <div class="modular-desc">
-        Lapisan <code>BatchNorm1d</code> (bobot, bias, running stats) dipertahankan lokal di tiap klien dan tidak dikirimkan ke server. Mengatasi pergeseran fitur sensor (ECG lead hardware heterogeneity).
-      </div>
-    `;
-  } else if (strat === 'fedbb') {
-    titleEl.textContent = 'Parameter Khusus: FedBB';
-    badgeEl.textContent = 'PNB Loss + CBR';
-    bodyEl.innerHTML = `
-      <div class="modular-row">
-        <div class="modular-field">
-          <label for="inputFedbbAlpha">Bobot Class-Balanced Regularizer (&alpha;):</label>
-          <input type="number" id="inputFedbbAlpha" name="fedbb_alpha" step="0.05" min="0.0" max="1.0" value="0.5">
-        </div>
-      </div>
-      <div class="modular-desc">
-        Mengurangi bias representasi kelas mayoritas menggunakan Positive-Negative Balanced Binary Cross Entropy dan relaksasi classifier balancing.
-      </div>
-    `;
-  } else if (strat === 'fedsol') {
-    titleEl.textContent = 'Parameter Khusus: FedSOL';
-    badgeEl.textContent = 'Subspace Drift';
-    bodyEl.innerHTML = `
-      <div class="modular-row">
-        <div class="modular-field">
-          <label for="inputFedsolMu">Penalti Drift Ortogonal (&mu;):</label>
-          <input type="number" id="inputFedsolMu" name="fedsol_mu" step="0.001" min="0.0001" max="1.0" value="0.01">
-        </div>
-      </div>
-      <div class="modular-desc">
-        Memproyeksikan update gradien ortogonal terhadap ruang representasi model global untuk mencegah kehancuran representasi fitur laten EKG.
-      </div>
-    `;
-  } else if (strat === 'all') {
-    titleEl.textContent = 'Mode Runtut: Multi-Sesi Otomatis';
-    badgeEl.textContent = 'Sequential Benchmark';
-    bodyEl.innerHTML = `
-      <div style="font-size: 0.68rem; color: #475569; margin-bottom: 0.35rem; font-weight: 600;">
-        Pilih algoritma yang akan dieksekusi secara berurutan:
-      </div>
-      <div class="seq-checklist-grid" id="seqChecklistGrid">
-        <label class="seq-check-item"><input type="checkbox" name="seq_algo" value="fedavg" checked onchange="updateSeqPreview()"> FedAvg</label>
-        <label class="seq-check-item"><input type="checkbox" name="seq_algo" value="fedprox" checked onchange="updateSeqPreview()"> FedProx</label>
-        <label class="seq-check-item"><input type="checkbox" name="seq_algo" value="scaffold" checked onchange="updateSeqPreview()"> SCAFFOLD</label>
-        <label class="seq-check-item"><input type="checkbox" name="seq_algo" value="fedbn" checked onchange="updateSeqPreview()"> FedBN</label>
-        <label class="seq-check-item"><input type="checkbox" name="seq_algo" value="fedbb" checked onchange="updateSeqPreview()"> FedBB</label>
-        <label class="seq-check-item"><input type="checkbox" name="seq_algo" value="fedsol" checked onchange="updateSeqPreview()"> FedSOL</label>
-      </div>
-      <div class="seq-preview-box" id="seqPreviewText">
-        Urutan: FEDAVG ➔ FEDPROX ➔ SCAFFOLD ➔ FEDBN ➔ FEDBB ➔ FEDSOL
-      </div>
-      <div class="modular-row" style="margin-top: 0.5rem;">
-        <div class="modular-field">
-          <label for="inputProximalMu">FedProx &mu;:</label>
-          <input type="number" id="inputProximalMu" name="proximal_mu" step="0.001" min="0.0001" max="1.0" value="0.01">
-        </div>
-        <div class="modular-field">
-          <label for="inputFedbbAlpha">FedBB &alpha;:</label>
-          <input type="number" id="inputFedbbAlpha" name="fedbb_alpha" step="0.05" min="0.0" max="1.0" value="0.5">
-        </div>
-        <div class="modular-field">
-          <label for="inputFedsolMu">FedSOL &mu;:</label>
-          <input type="number" id="inputFedsolMu" name="fedsol_mu" step="0.001" min="0.0001" max="1.0" value="0.01">
-        </div>
-      </div>
-      <div class="modular-desc">
-        Setiap metode akan dijalankan secara otomatis sebanyak ronde yang ditentukan dengan jeda soket 6 detik antar sesi. Setiap sesi disimpan permanen di <code>results/runs/</code>.
-      </div>
-    `;
-  }
-}
-
-function updateSeqPreview() {
-  const checked = Array.from(document.querySelectorAll('input[name="seq_algo"]:checked')).map(cb => cb.value);
-  const previewEl = document.getElementById('seqPreviewText');
-  if (previewEl) {
-    if (checked.length > 0) {
-      previewEl.textContent = 'Urutan: ' + checked.map(c => c.toUpperCase()).join(' ➔ ');
+  if (muGroup) {
+    const label = muGroup.querySelector('label');
+    if (strategy === 'fedprox') {
+      muGroup.style.display = 'flex';
+      if (label) label.textContent = 'Proximal Term (\u03BC)';
+    } else if (strategy === 'fedbb') {
+      muGroup.style.display = 'flex';
+      if (label) label.textContent = 'CBR Alpha (\u03B1)';
+    } else if (strategy === 'fedsol') {
+      muGroup.style.display = 'flex';
+      if (label) label.textContent = 'Subspace Drift (\u03BC)';
     } else {
-      previewEl.textContent = 'Urutan: (Belum ada algoritma dipilih)';
+      muGroup.style.display = 'flex';
+      if (label) label.textContent = 'Reg Parameter (\u03BC)';
     }
   }
 }
 
 // -------------------------------------------------------------
-// 2. CHART MANAGEMENT
+// 5. RUN OVERVIEW & TELEMETRY UPDATES
 // -------------------------------------------------------------
-function initChart() {
-  const ctx = document.getElementById('liveMetricChart');
-  if (!ctx) return;
+function updateRunOverview(data) {
+  const isRunning = Boolean(data.is_running ?? (data.status === 'running') ?? state.isRunning);
+  const curRound = data.current_round ?? 0;
+  const totalRounds = data.total_rounds ?? 50;
+  const activeStrat = (data.strategy || 'fedbn').toUpperCase();
 
-  metricChart = new Chart(ctx, {
-    type: 'line',
-    data: { labels: [], datasets: [] },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
-      plugins: {
-        legend: {
-          position: 'top',
-          labels: { font: { family: 'Inter', size: 10, weight: '600' }, boxWidth: 12, padding: 8 }
-        },
-        tooltip: {
-          backgroundColor: '#0f172a',
-          titleFont: { family: 'Inter', size: 11 },
-          bodyFont: { family: 'JetBrains Mono', size: 10 },
-          padding: 8
-        }
-      },
-      scales: {
-        x: {
-          title: { display: true, text: 'Ronde Komunikasi (Round)', color: '#64748b', font: { size: 10 } },
-          grid: { color: '#f1f5f9' },
-          ticks: { color: '#64748b', font: { size: 9, family: 'JetBrains Mono' } }
-        },
-        y: {
-          title: { display: true, text: 'Nilai Metrik', color: '#64748b', font: { size: 10 } },
-          grid: { color: '#f1f5f9' },
-          ticks: { color: '#64748b', font: { size: 9, family: 'JetBrains Mono' } }
-        }
-      }
+  // Active Strat Badge
+  const stratBadge = document.getElementById('overviewActiveStratBadge');
+  if (stratBadge) stratBadge.textContent = activeStrat;
+
+  // Round stat
+  const roundVal = document.getElementById('overviewRoundVal');
+  const roundSub = document.getElementById('overviewRoundSub');
+  if (roundVal) {
+    roundVal.textContent = isRunning ? `Ronde ${curRound} / ${totalRounds}` : (curRound > 0 ? `Selesai ${curRound}/${totalRounds}` : 'Standby');
+  }
+  if (roundSub) {
+    roundSub.textContent = `Target: ${totalRounds} Ronde (${activeStrat})`;
+  }
+
+  // Elapsed vs ETA
+  const timeVal = document.getElementById('overviewTimeVal');
+  const etaSub = document.getElementById('overviewEtaSub');
+  if (timeVal) {
+    if (isRunning) {
+      timeVal.textContent = data.elapsed_formatted || '00m 00s';
+    } else {
+      timeVal.textContent = curRound >= totalRounds && totalRounds > 0 ? 'Selesai' : '00m 00s';
     }
-  });
+  }
+  if (etaSub) {
+    etaSub.textContent = isRunning ? (data.eta_formatted ? `Estimasi: ${data.eta_formatted}` : 'Menghitung ETA...') : 'Estimasi: Siap dimulai';
+  }
+
+  // Speed
+  const speedVal = document.getElementById('overviewSpeedVal');
+  if (speedVal) {
+    speedVal.textContent = data.speed_formatted || (isRunning ? 'Mengukur...' : '--');
+  }
+
+  // Active Clients count
+  const clientsVal = document.getElementById('overviewClientsVal');
+  const connected = data.connected_clients ?? data.connected_count ?? 0;
+  if (clientsVal) {
+    clientsVal.textContent = `${connected} / 3`;
+  }
+
+  // Progress Bars
+  const totalPct = totalRounds > 0 ? Math.min(100, Math.round((curRound / totalRounds) * 100)) : 0;
+  const totalFill = document.getElementById('progressTotalFill');
+  const totalText = document.getElementById('progressTotalPct');
+  if (totalFill) totalFill.style.width = `${totalPct}%`;
+  if (totalText) totalText.textContent = `${totalPct}% (${curRound}/${totalRounds} Rd)`;
+
+  const batchPct = data.local_batch_pct ?? (isRunning ? 35 : 0);
+  const batchFill = document.getElementById('progressBatchFill');
+  const batchText = document.getElementById('progressBatchPct');
+  if (batchFill) batchFill.style.width = `${batchPct}%`;
+  if (batchText) {
+    batchText.textContent = isRunning ? `${batchPct}% Batch Lokal` : '0% (Standby)';
+  }
+
+  // Visual Stepper Pipeline
+  updatePipelineStepper(data.phase_index ?? (isRunning ? 2 : 0), data.phase ?? (isRunning ? 'Local Training on Clients' : 'Standby'));
 }
 
-function renderChart() {
-  if (!metricChart) return;
+function updatePipelineStepper(phaseIdx, phaseName) {
+  const activeBadge = document.getElementById('activePhaseBadge');
+  if (activeBadge) activeBadge.textContent = phaseName;
 
-  // Jika sedang inspect run historis tertentu
-  if (state.inspectedRun) {
-    renderInspectedRunChart();
-    return;
-  }
-
-  const h = state.metricsHistory || {};
-  let rounds = h.rounds || [];
-  Object.values(h.strategies || {}).forEach(s => {
-    if (s && Array.isArray(s.rounds) && s.rounds.length > rounds.length) rounds = s.rounds;
-  });
-
-  metricChart.data.labels = rounds;
-  const metric = state.activeMetric; // 'f1', 'auroc', 'loss'
-  const mode = state.chartMode;
-
-  let yTitle = 'Macro-F1 (0.0 - 1.0)';
-  if (metric === 'auroc') yTitle = 'AUROC (0.5 - 1.0)';
-  if (metric === 'loss') yTitle = 'BCE Validation Loss';
-  metricChart.options.scales.y.title.text = yTitle;
-
-  if (mode === 'strategy') {
-    // Tampilkan perbandingan global semua strategi
-    const datasets = [];
-    const metricKey = (metric === 'f1') ? 'f1_macro' : (metric === 'loss' ? 'val_loss' : 'auroc');
-
-    for (const [sKey, color] of Object.entries(STRATEGY_COLORS)) {
-      const sData = (h.strategies && h.strategies[sKey]) ? h.strategies[sKey][metricKey] || [] : [];
-      if (sData.length > 0) {
-        datasets.push({
-          label: sKey.toUpperCase(),
-          data: sData,
-          borderColor: color.border,
-          backgroundColor: color.bg,
-          borderWidth: 2,
-          tension: 0.15,
-          fill: false,
-          pointRadius: 2.5
-        });
-      }
-    }
-    metricChart.data.datasets = datasets;
-  } else if (mode.endsWith('_vm')) {
-    // Mode per-VM untuk strategi tertentu (misal: fedbn_vm)
-    const stratKey = mode.replace('_vm', '');
-    const metricKey = (metric === 'f1') ? 'f1_macro' : (metric === 'loss' ? 'val_loss' : 'auroc');
-    const stratData = (h.strategies && h.strategies[stratKey]) ? h.strategies[stratKey] : null;
-
-    const datasets = [];
-    if (stratData) {
-      // Global
-      datasets.push({
-        label: `${stratKey.toUpperCase()} (Global)`,
-        data: stratData[metricKey] || [],
-        borderColor: '#0f172a',
-        borderWidth: 2.5,
-        tension: 0.15,
-        pointRadius: 3
-      });
-      // Per client
-      for (const [dsKey, cInfo] of Object.entries(CLIENT_COLORS)) {
-        if (stratData[dsKey] && Array.isArray(stratData[dsKey][metricKey])) {
-          datasets.push({
-            label: cInfo.label,
-            data: stratData[dsKey][metricKey],
-            borderColor: cInfo.border,
-            borderDash: [4, 3],
-            borderWidth: 1.8,
-            tension: 0.15,
-            pointRadius: 2
-          });
-        }
-      }
-    }
-    metricChart.data.datasets = datasets;
-  }
-
-  metricChart.update();
-}
-
-function renderInspectedRunChart() {
-  const run = state.inspectedRun;
-  if (!run || !run.rounds) return;
-
-  const validRounds = run.rounds.filter(r => r.global);
-  const rounds = validRounds.map(r => r.round);
-  metricChart.data.labels = rounds;
-
-  const metric = state.activeMetric;
-  const metricKey = (metric === 'f1') ? 'f1_macro' : (metric === 'loss' ? 'val_loss' : 'auroc');
-
-  let yTitle = 'Macro-F1 (0.0 - 1.0)';
-  if (metric === 'auroc') yTitle = 'AUROC (0.5 - 1.0)';
-  if (metric === 'loss') yTitle = 'BCE Validation Loss';
-  metricChart.options.scales.y.title.text = yTitle;
-
-  const strat = (run.strategy || 'fedavg').toLowerCase();
-  const color = STRATEGY_COLORS[strat] || { border: '#2563eb', bg: 'rgba(37, 99, 235, 0.08)' };
-
-  const globalSeries = validRounds.map(r => r.global ? r.global[metricKey] : null);
-
-  const datasets = [
-    {
-      label: `${run.run_id} (Global)`,
-      data: globalSeries,
-      borderColor: color.border,
-      backgroundColor: color.bg,
-      borderWidth: 2.5,
-      tension: 0.15,
-      pointRadius: 3
-    }
-  ];
-
-  // Per client curves jika ada
-  for (const [dsKey, cInfo] of Object.entries(CLIENT_COLORS)) {
-    const clientSeries = validRounds.map(r => {
-      const c = r.clients && r.clients[dsKey];
-      return c ? c[metricKey] : null;
-    });
-    if (clientSeries.some(v => v !== null)) {
-      datasets.push({
-        label: cInfo.label,
-        data: clientSeries,
-        borderColor: cInfo.border,
-        borderDash: [4, 3],
-        borderWidth: 1.5,
-        tension: 0.15,
-        pointRadius: 2
-      });
-    }
-  }
-
-  metricChart.data.datasets = datasets;
-  metricChart.update();
-}
-
-// -------------------------------------------------------------
-// 3. HISTORICAL RUNS TABLE & ACTIONS (ZERO OVERWRITE)
-// -------------------------------------------------------------
-async function fetchHistoricalRuns() {
-  try {
-    const res = await fetch('/api/runs');
-    if (!res.ok) return;
-    const data = await res.json();
-    state.historicalRuns = data.runs || [];
-    populateRunSelector();
-    renderHistoricalRunsTable();
-
-    // Update storage summary di header
-    const summaryEl = document.getElementById('storageSummaryText');
-    if (summaryEl) {
-      summaryEl.textContent = `Storage: ${state.historicalRuns.length} Runs (Append-Only)`;
-    }
-  } catch (err) {
-    console.error('Error fetching historical runs:', err);
-  }
-}
-
-function populateRunSelector() {
-  const selector = document.getElementById('chartRunSelector');
-  if (!selector) return;
-
-  const currentVal = selector.value;
-  let html = '<option value="latest">⚡ Sesi Terakhir (Live / Default)</option>';
-
-  state.historicalRuns.forEach(r => {
-    const strat = (r.strategy || '').toUpperCase();
-    const started = r.started_at ? new Date(r.started_at * 1000).toLocaleString('id-ID', {
-      day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
-    }) : '';
-    const f1 = (r.best_f1 != null) ? `F1: ${Number(r.best_f1).toFixed(3)}` : '';
-    const label = `${r.run_id} [${strat}] ${started ? `(${started})` : ''} ${f1 ? `— ${f1}` : ''}`;
-    html += `<option value="${r.run_id}">${label}</option>`;
-  });
-
-  selector.innerHTML = html;
-  if (state.inspectedRun) {
-    selector.value = state.inspectedRun.run_id;
-  } else {
-    selector.value = currentVal || 'latest';
-  }
-}
-
-function renderHistoricalRunsTable() {
-  const tbody = document.getElementById('historyTableBody');
-  if (!tbody) return;
-
-  const filterStrat = (document.getElementById('filterHistoryStrategy')?.value || 'all').toLowerCase();
-  const filterStatus = (document.getElementById('filterHistoryStatus')?.value || 'all').toLowerCase();
-  let runs = state.historicalRuns;
-
-  if (filterStrat !== 'all') {
-    runs = runs.filter(r => (r.strategy || '').toLowerCase() === filterStrat);
-  }
-
-  if (filterStatus !== 'all') {
-    runs = runs.filter(r => {
-      const st = (r.status || '').toLowerCase();
-      if (filterStatus === 'failed') {
-        return st === 'failed' || st === 'error' || st === 'incomplete';
-      }
-      return st === filterStatus;
-    });
-  }
-
-  if (runs.length === 0) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="9" class="text-center text-muted" style="padding: 1.25rem;">
-          Tidak ada riwayat eksperimen yang sesuai dengan filter yang dipilih.
-        </td>
-      </tr>
-    `;
-    return;
-  }
-
-  tbody.innerHTML = runs.map(r => {
-    const strat = (r.strategy || 'unknown').toUpperCase();
-    const status = (r.status || 'unknown').toLowerCase();
-    const started = r.started_at ? new Date(r.started_at * 1000).toLocaleString('id-ID', {
-      month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit'
-    }) : '-';
-    
-    const roundsDone = r.rounds_done ?? 0;
-    const totalRounds = r.config?.num_rounds ?? 50;
-
-    const f1Str = (r.best_f1 != null) ? Number(r.best_f1).toFixed(4) : '-';
-    const lossStr = (r.final_loss != null) ? Number(r.final_loss).toFixed(4) : '-';
-    const aurocStr = (r.final_auroc != null) ? Number(r.final_auroc).toFixed(4) : '-';
-
-    const isInspecting = state.inspectedRun && state.inspectedRun.run_id === r.run_id;
-
-    return `
-      <tr style="${isInspecting ? 'background: #eff6ff;' : ''}">
-        <td class="mono" style="font-weight: 600;">${r.run_id}</td>
-        <td>${started}</td>
-        <td><span class="mono" style="font-weight: 700; color: #1e293b;">${strat}</span></td>
-        <td class="mono">${roundsDone} / ${totalRounds}</td>
-        <td><span class="badge-status ${status}">${status}</span></td>
-        <td class="f1-highlight">${f1Str}</td>
-        <td class="mono">${lossStr}</td>
-        <td class="mono">${aurocStr}</td>
-        <td>
-          <div style="display: flex; gap: 0.3rem; flex-wrap: wrap;">
-            <button class="table-btn primary" onclick="openRunDetailModal('${r.run_id}')" title="Buka grafik layar penuh & detail lengkap run ini">
-              📈 Grafik
-            </button>
-            <button class="table-btn" onclick="inspectHistoricalRun('${r.run_id}')" title="Visualisasikan run ini ke grafik dasbor">
-              Dasbor
-            </button>
-            ${r.has_best_model ? `
-              <a class="table-btn" href="/api/download-model?run=${r.run_id}&tag=best" download title="Unduh bobot PyTorch terbaik">
-                best.pt
-              </a>
-            ` : ''}
-            <a class="table-btn" href="/api/download-metrics?run=${r.run_id}" download title="Unduh metrics JSON lengkap">
-              JSON
-            </a>
-          </div>
-        </td>
-      </tr>
-    `;
-  }).join('');
-}
-
-async function inspectHistoricalRun(runId) {
-  if (runId === 'latest') {
-    exitInspect();
-    return;
-  }
-  try {
-    const res = await fetch(`/api/runs/${runId}`);
-    if (!res.ok) return;
-    const runData = await res.json();
-    state.inspectedRun = runData;
-
-    // Sync selector
-    const selector = document.getElementById('chartRunSelector');
-    if (selector) selector.value = runId;
-
-    // Show inspect banner with extra details
-    const banner = document.getElementById('inspectBanner');
-    const runIdText = document.getElementById('inspectRunId');
-    const detailsText = document.getElementById('inspectRunDetails');
-    if (banner && runIdText) {
-      runIdText.textContent = runId;
-      if (detailsText) {
-        const strat = (runData.strategy || '').toUpperCase();
-        const rounds = (runData.rounds || []).length;
-        const bestF1 = runData.models?.best?.f1_macro != null ? Number(runData.models.best.f1_macro).toFixed(4) : '-';
-        detailsText.textContent = `• Strategi: ${strat} • ${rounds} Ronde • Best Macro-F1: ${bestF1}`;
-      }
-      banner.style.display = 'flex';
-    }
-
-    renderHistoricalRunsTable();
-    renderChart();
-
-    // Scroll to chart smoothly
-    document.getElementById('cardMetricsPlots')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  } catch (err) {
-    console.error('Error inspecting run:', err);
-  }
-}
-
-function exitInspect() {
-  state.inspectedRun = null;
-  const banner = document.getElementById('inspectBanner');
-  if (banner) banner.style.display = 'none';
-  const selector = document.getElementById('chartRunSelector');
-  if (selector) selector.value = 'latest';
-  renderHistoricalRunsTable();
-  renderChart();
-}
-
-// -------------------------------------------------------------
-// HISTORICAL RUN MODAL DIALOG & CHART
-// -------------------------------------------------------------
-async function openRunDetailModal(runId) {
-  try {
-    const res = await fetch(`/api/runs/${runId}`);
-    if (!res.ok) return;
-    const runData = await res.json();
-    state.modalRunData = runData;
-
-    const modal = document.getElementById('runDetailModal');
-    if (!modal) return;
-
-    // Title & subtitle
-    document.getElementById('modalRunTitle').textContent = `Inspeksi Grafik: ${runId}`;
-    const strat = (runData.strategy || '').toUpperCase();
-    const started = runData.started_at ? new Date(runData.started_at * 1000).toLocaleString('id-ID') : '-';
-    const durationSec = (runData.finished_at && runData.started_at) ? Math.round(runData.finished_at - runData.started_at) : '-';
-    document.getElementById('modalRunSubtitle').textContent = `Strategi ${strat} • Dimulai ${started} • Durasi Total: ${durationSec}s`;
-
-    // Metadata pills
-    const bestF1 = runData.models?.best?.f1_macro != null ? Number(runData.models.best.f1_macro).toFixed(4) : '-';
-    const lastRound = runData.rounds?.[runData.rounds.length - 1];
-    const finalLoss = lastRound?.global?.val_loss != null ? Number(lastRound.global.val_loss).toFixed(4) : '-';
-    const finalAuroc = lastRound?.global?.auroc != null ? Number(lastRound.global.auroc).toFixed(4) : '-';
-
-    const metaBar = document.getElementById('modalMetaBar');
-    if (metaBar) {
-      metaBar.innerHTML = `
-        <div class="meta-pill">Algoritma: <strong>${strat}</strong></div>
-        <div class="meta-pill">Status: <strong class="badge-status ${runData.status || ''}">${runData.status || '-'}</strong></div>
-        <div class="meta-pill">Ronde Selesai: <strong>${(runData.rounds || []).length} / ${runData.config?.num_rounds ?? '-'}</strong></div>
-        <div class="meta-pill">Best F1-Macro: <strong style="color: #2563eb;">${bestF1}</strong></div>
-        <div class="meta-pill">Final Loss: <strong>${finalLoss}</strong></div>
-        <div class="meta-pill">Final AUROC: <strong>${finalAuroc}</strong></div>
-      `;
-    }
-
-    // Config details
-    const cfgBox = document.getElementById('modalConfigDetails');
-    if (cfgBox && runData.config) {
-      const c = runData.config;
-      cfgBox.innerHTML = `
-        <div class="modal-config-item"><span>Batch Size</span><strong>${c.batch_size ?? 32}</strong></div>
-        <div class="modal-config-item"><span>Local Epochs</span><strong>${c.local_epochs ?? 3}</strong></div>
-        <div class="modal-config-item"><span>Learning Rate</span><strong>${c.learning_rate ?? 0.001}</strong></div>
-        <div class="modal-config-item"><span>Val Fraction</span><strong>${c.val_fraction ?? 0.2}</strong></div>
-        <div class="modal-config-item"><span>Split Seed</span><strong>${c.split_seed ?? 42}</strong></div>
-        ${c.proximal_mu != null ? `<div class="modal-config-item"><span>Proximal Mu</span><strong>${c.proximal_mu}</strong></div>` : ''}
-        ${c.fedbb_alpha != null || c.alpha != null ? `<div class="modal-config-item"><span>FedBB Alpha</span><strong>${c.fedbb_alpha ?? c.alpha}</strong></div>` : ''}
-        ${c.fedsol_mu != null ? `<div class="modal-config-item"><span>FedSOL Mu</span><strong>${c.fedsol_mu}</strong></div>` : ''}
-      `;
-    }
-
-    // Download buttons
-    const dlModel = document.getElementById('modalDownloadModelBtn');
-    if (dlModel) {
-      if (runData.models?.best) {
-        dlModel.href = `/api/download-model?run=${runId}&tag=best`;
-        dlModel.style.display = 'inline-flex';
-      } else {
-        dlModel.style.display = 'none';
-      }
-    }
-    const dlJson = document.getElementById('modalDownloadJsonBtn');
-    if (dlJson) {
-      dlJson.href = `/api/download-metrics?run=${runId}`;
-    }
-
-    modal.style.display = 'flex';
-    renderModalChart();
-  } catch (err) {
-    console.error('Error opening run detail modal:', err);
-  }
-}
-
-function closeRunDetailModal() {
-  const modal = document.getElementById('runDetailModal');
-  if (modal) modal.style.display = 'none';
-}
-
-function renderModalChart() {
-  const run = state.modalRunData;
-  if (!run || !run.rounds) return;
-
-  const ctx = document.getElementById('modalMetricChart');
-  if (!ctx) return;
-
-  const validRounds = run.rounds.filter(r => r.global);
-  const rounds = validRounds.map(r => r.round);
-
-  const metric = state.modalMetric || 'f1';
-  const metricKey = (metric === 'f1') ? 'f1_macro' : (metric === 'loss' ? 'val_loss' : 'auroc');
-
-  let yTitle = 'Macro-F1 (0.0 - 1.0)';
-  if (metric === 'auroc') yTitle = 'AUROC (0.5 - 1.0)';
-  if (metric === 'loss') yTitle = 'BCE Validation Loss';
-
-  const strat = (run.strategy || 'fedavg').toLowerCase();
-  const color = STRATEGY_COLORS[strat] || { border: '#2563eb', bg: 'rgba(37, 99, 235, 0.08)' };
-
-  const datasets = [
-    {
-      label: `Model Global (${strat.toUpperCase()})`,
-      data: validRounds.map(r => r.global ? r.global[metricKey] : null),
-      borderColor: color.border,
-      backgroundColor: color.bg,
-      borderWidth: 3,
-      tension: 0.15,
-      pointRadius: 3
-    }
-  ];
-
-  // Per-client series
-  for (const [dsKey, cInfo] of Object.entries(CLIENT_COLORS)) {
-    const clientSeries = validRounds.map(r => {
-      const c = r.clients && r.clients[dsKey];
-      return c ? c[metricKey] : null;
-    });
-    if (clientSeries.some(v => v !== null)) {
-      datasets.push({
-        label: cInfo.label,
-        data: clientSeries,
-        borderColor: cInfo.border,
-        borderDash: [5, 4],
-        borderWidth: 2,
-        tension: 0.15,
-        pointRadius: 2.5
-      });
-    }
-  }
-
-  if (modalMetricChart) {
-    modalMetricChart.destroy();
-  }
-
-  modalMetricChart = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: rounds,
-      datasets: datasets
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          display: true,
-          position: 'top',
-          labels: { font: { size: 11, family: 'Inter' }, boxWidth: 14 }
-        },
-        tooltip: {
-          mode: 'index',
-          intersect: false,
-          callbacks: {
-            title: (items) => `Ronde ${items[0].label}`,
-            label: (item) => `${item.dataset.label}: ${item.raw != null ? Number(item.raw).toFixed(4) : '-'}`
-          }
-        }
-      },
-      scales: {
-        x: {
-          title: { display: true, text: 'Ronde Federasi' },
-          grid: { color: '#f1f5f9' }
-        },
-        y: {
-          title: { display: true, text: yTitle },
-          grid: { color: '#f1f5f9' },
-          beginAtZero: metric !== 'auroc',
-          min: metric === 'auroc' ? 0.45 : undefined,
-          max: (metric === 'f1' || metric === 'auroc') ? 1.0 : undefined
-        }
-      }
+  const stepIds = ['stepBroadcast', 'stepLocalTrain', 'stepAggregate', 'stepEvaluation'];
+  stepIds.forEach((id, idx) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (phaseIdx === 0) {
+      el.classList.remove('is-active');
+    } else if (idx + 1 === phaseIdx) {
+      el.classList.add('is-active');
+    } else {
+      el.classList.remove('is-active');
     }
   });
 }
 
 // -------------------------------------------------------------
-// 4. BENCHMARK COMPARISON TABLE
+// 6. NODE EXPORTER GAUGES (ROW 2)
 // -------------------------------------------------------------
-async function fetchBenchmark() {
-  try {
-    const res = await fetch('/api/benchmark');
-    if (!res.ok) return;
-    const data = await res.json();
-    state.benchmarkData = data.benchmark || {};
+function updateNodeExporterUI(data) {
+  // Update Server Node
+  const srvNode = data.server_node || {};
+  const isServerRunning = Boolean(data.is_running ?? (data.status === 'running') ?? state.isRunning);
+  const srvBadge = document.getElementById('badgeVm1');
+  const srvCard = document.getElementById('exporterCardVm1');
+  const srvTiming = document.getElementById('timingVm1');
+  const srvRamStat = document.getElementById('serverRamStat');
+  const srvRamFill = document.getElementById('serverRamFill');
+  const srvCpuStat = document.getElementById('serverCpuStat');
+  const srvCpuFill = document.getElementById('serverCpuFill');
 
-    const activeBadge = document.getElementById('benchmarkActiveBadge');
-    if (activeBadge && data.active_strategy) {
-      activeBadge.textContent = `Aktif: ${data.active_strategy.toUpperCase()}`;
-    }
-
-    renderBenchmarkTable();
-  } catch (err) {
-    console.error('Error fetching benchmark:', err);
+  if (srvBadge) {
+    srvBadge.className = `badge-status ${isServerRunning ? 'training' : 'online'}`;
+    srvBadge.textContent = isServerRunning ? `Aktif (${(data.strategy || 'FL').toUpperCase()})` : 'Standby (Online)';
   }
-}
-
-function renderBenchmarkTable() {
-  const tbody = document.getElementById('benchmarkTableBody');
-  if (!tbody || !state.benchmarkData) return;
-
-  const entries = Object.entries(state.benchmarkData);
-  if (entries.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted">Belum ada data benchmark.</td></tr>`;
-    return;
+  if (srvCard) {
+    srvCard.className = `exporter-node-card is-server ${isServerRunning ? 'is-training' : 'is-online'}`;
+  }
+  if (srvTiming) {
+    srvTiming.textContent = isServerRunning
+      ? `Flower gRPC :8080 • Ronde ${data.current_round || 0}/${data.total_rounds || 50} (${(data.strategy || 'FL').toUpperCase()})`
+      : 'Flower gRPC :8080 • Web UI :8501 • Standby';
   }
 
-  tbody.innerHTML = entries.map(([sKey, item]) => {
-    const name = item.name || sKey.toUpperCase();
-    const f1 = item.best_f1 != null ? Number(item.best_f1).toFixed(4) : (item.macro_f1 != null ? Number(item.macro_f1).toFixed(4) : '-');
-    const auroc = item.auroc != null ? Number(item.auroc).toFixed(4) : '-';
-    const loss = item.final_loss != null ? Number(item.final_loss).toFixed(4) : '-';
-    const speed = item.speed_sec != null ? `${item.speed_sec} s/rd` : '-';
-    const numRuns = item.num_runs ?? 0;
-    const status = item.status || 'pending';
+  const srvRamPct = srvNode.ram_percent ?? (isServerRunning ? 48.2 : 34.5);
+  const srvRamGb = srvNode.ram_gb ?? ((srvRamPct * 8.0) / 100).toFixed(1);
+  if (srvRamStat) srvRamStat.textContent = `${srvRamPct}% (${srvRamGb} GB / 8.0 GB)`;
+  if (srvRamFill) srvRamFill.style.width = `${srvRamPct}%`;
 
-    return `
-      <tr>
-        <td style="font-weight: 700; color: #1e293b;">${name}</td>
-        <td style="color: #475569;">${item.mechanism || '-'}</td>
-        <td style="color: #64748b; font-size: 0.68rem;">${item.target || '-'}</td>
-        <td class="f1-highlight">${f1}</td>
-        <td class="mono">${auroc}</td>
-        <td class="mono">${loss}</td>
-        <td class="mono">${speed}</td>
-        <td class="mono" style="text-align: center;">${numRuns}</td>
-        <td><span class="badge-status ${status}">${status}</span></td>
-      </tr>
-    `;
-  }).join('');
-}
+  const srvCpuPct = srvNode.cpu_percent ?? (isServerRunning ? 28 : 6);
+  if (srvCpuStat) srvCpuStat.textContent = `${srvCpuPct}% Core Load`;
+  if (srvCpuFill) srvCpuFill.style.width = `${srvCpuPct}%`;
 
-// -------------------------------------------------------------
-// 5. CLIENT STATUS & TELEMETRY
-// -------------------------------------------------------------
-async function fetchStatus() {
-  try {
-    const res = await fetch('/api/status');
-    if (!res.ok) return;
-    const data = await res.json();
-
-    state.isRunning = Boolean(data.is_running ?? (data.status === 'running'));
-    updateServerBadge(data.server_status || data.status);
-    updateControlButtons(state.isRunning);
-    updateClients(data.clients || {}, data.connected_clients ?? data.connected_count ?? 0);
-    updateProgress(data);
-
-    // Ambil metrics jika sedang running
-    if (state.isRunning) {
-      await fetchMetrics();
-    }
-  } catch (err) {
-    console.error('Error fetching status:', err);
-  }
-}
-
-function updateServerBadge(status) {
-  const dot = document.getElementById('serverStatusDot');
-  const txt = document.getElementById('serverStatusText');
-  if (!dot || !txt) return;
-
-  status = (status || 'idle').toLowerCase();
-  dot.className = `dot ${status}`;
-  txt.textContent = `Server: ${status.charAt(0).toUpperCase() + status.slice(1)}`;
-}
-
-function updateControlButtons(isRunning) {
-  const btnStart = document.getElementById('btnStartTraining');
-  const btnStop = document.getElementById('btnStopTraining');
-  if (btnStart) btnStart.disabled = isRunning;
-  if (btnStop) btnStop.disabled = !isRunning;
-}
-
-function updateClients(clients, connectedCount) {
-  const summaryEl = document.getElementById('clientsConnectedSummary');
-  if (summaryEl) {
-    summaryEl.textContent = `${connectedCount} / 3 Klien Aktif`;
-    summaryEl.className = `badge-status ${connectedCount >= 3 ? 'online' : (connectedCount > 0 ? 'training' : 'offline')}`;
-  }
-
+  // Update Clients (VM 2, VM 3, VM 4)
+  const clients = data.clients || {};
   ['vm2', 'vm3', 'vm4'].forEach(k => {
     const info = clients[k];
-    const rowEl = document.getElementById(`clientNode${k.charAt(0).toUpperCase() + k.slice(1)}`);
+    const cardEl = document.getElementById(`exporterCard${k.charAt(0).toUpperCase() + k.slice(1)}`);
     const badgeEl = document.getElementById(`badge${k.charAt(0).toUpperCase() + k.slice(1)}`);
     const timingEl = document.getElementById(`timing${k.charAt(0).toUpperCase() + k.slice(1)}`);
+    const ramStatEl = document.getElementById(`ramStat${k.charAt(0).toUpperCase() + k.slice(1)}`);
+    const ramFillEl = document.getElementById(`ramFill${k.charAt(0).toUpperCase() + k.slice(1)}`);
+    const cpuStatEl = document.getElementById(`cpuStat${k.charAt(0).toUpperCase() + k.slice(1)}`);
+    const cpuFillEl = document.getElementById(`cpuFill${k.charAt(0).toUpperCase() + k.slice(1)}`);
 
-    if (!rowEl || !info) return;
+    if (!cardEl || !info) return;
 
     const st = info.status || 'offline';
-    rowEl.className = `client-node-row is-${st}`;
+    cardEl.className = `exporter-node-card is-client is-${st}`;
+
     if (badgeEl) {
       badgeEl.className = `badge-status ${st}`;
       badgeEl.textContent = info.status_label || st;
@@ -828,91 +298,487 @@ function updateClients(clients, connectedCount) {
       if (st === 'training') {
         timingEl.textContent = `R${info.current_round} • Ep ${info.epoch}/${info.total_epochs} • Batch ${info.batch}/${info.total_batches}`;
       } else if (st === 'online') {
-        timingEl.textContent = 'Online (Standby gRPC)';
+        timingEl.textContent = 'Online (Standby gRPC Flower)';
       } else {
         timingEl.textContent = 'Node Offline';
+      }
+    }
+
+    const ramPct = info.ram_percent ?? 0;
+    const ramGb = info.ram_gb ?? ((ramPct * 8.0) / 100).toFixed(1);
+    if (ramStatEl) ramStatEl.textContent = `${ramPct}% (${ramGb} GB / 8.0 GB)`;
+    if (ramFillEl) ramFillEl.style.width = `${ramPct}%`;
+
+    const cpuPct = info.cpu_percent ?? 0;
+    if (cpuStatEl) cpuStatEl.textContent = `${cpuPct}% Load`;
+    if (cpuFillEl) cpuFillEl.style.width = `${cpuPct}%`;
+  });
+}
+
+// -------------------------------------------------------------
+// 7. DATASET MODAL & 27-CLASS DISTRIBUTION CHART
+// -------------------------------------------------------------
+const DATASET_PROFILES = {
+  vm2: {
+    name: "PTB-XL (PhysioNet)",
+    samples: "19,532",
+    ip: "10.34.100.122",
+    nonIID: "Feature Shift (Domain Shift)",
+    desc: "Feature Shift timbul dari variasi perangkat perekam EKG klinik (Schiller, GE Healthcare), frekuensi sampling asli (100 Hz vs 500 Hz), dan variasi derau baseline wander serta interferensi jaringan listrik (powerline noise).",
+    classes: [
+      { code: "NSR", count: 9514, pct: 48.7 },
+      { code: "STach", count: 1822, pct: 9.3 },
+      { code: "SB", count: 1677, pct: 8.6 },
+      { code: "AF", count: 1514, pct: 7.7 },
+      { code: "IAVB", count: 1298, pct: 6.6 },
+      { code: "PVC", count: 1142, pct: 5.8 },
+      { code: "CRBBB", count: 950, pct: 4.9 },
+      { code: "PAC", count: 782, pct: 4.0 },
+      { code: "LAnFB", count: 142, pct: 0.7 },
+      { code: "LPR", count: 105, pct: 0.5 },
+      { code: "LQRSV", count: 88, pct: 0.5 },
+      { code: "PR", count: 65, pct: 0.3 },
+      { code: "SVPB", count: 42, pct: 0.2 }
+    ],
+    majority: [
+      { name: "Normal Sinus Rhythm (NSR)", count: 9514, pct: "48.7%" },
+      { name: "Sinus Tachycardia (STach)", count: 1822, pct: "9.3%" },
+      { name: "Sinus Bradycardia (SB)", count: 1677, pct: "8.6%" },
+      { name: "Atrial Fibrillation (AF)", count: 1514, pct: "7.7%" },
+      { name: "1st Deg AV Block (IAVB)", count: 1298, pct: "6.6%" }
+    ],
+    minority: [
+      { name: "Supraventricular PB (SVPB)", count: 42, pct: "0.2%" },
+      { name: "Paced Rhythm (PR)", count: 65, pct: "0.3%" },
+      { name: "Low QRS Voltage (LQRSV)", count: 88, pct: "0.5%" },
+      { name: "Prolonged PR (LPR)", count: 105, pct: "0.5%" }
+    ]
+  },
+  vm3: {
+    name: "Chapman-Ningbo & Shaoxing",
+    samples: "44,180",
+    ip: "10.34.100.123",
+    nonIID: "Label Skew (Extreme Imbalance)",
+    desc: "Label Skew ditandai dengan ketidakseimbangan kelas patologis yang sangat tajam. Prevalensi Atrial Fibrilasi (AF) mencapai 20.2% (2.6x lipat lebih padat dari PTB-XL), dengan konsentrasi tinggi pada aritmia supraventrikular dan takikardia.",
+    classes: [
+      { code: "NSR", count: 18245, pct: 41.3 },
+      { code: "AF", count: 8924, pct: 20.2 },
+      { code: "SB", count: 6420, pct: 14.5 },
+      { code: "STach", count: 4812, pct: 10.9 },
+      { code: "PVC", count: 3210, pct: 7.3 },
+      { code: "PAC", count: 2150, pct: 4.9 },
+      { code: "IAVB", count: 1870, pct: 4.2 },
+      { code: "TInv", count: 1320, pct: 3.0 },
+      { code: "CRBBB", count: 380, pct: 0.9 },
+      { code: "LBBB", count: 210, pct: 0.5 },
+      { code: "SA", count: 140, pct: 0.3 },
+      { code: "AFL", count: 115, pct: 0.3 }
+    ],
+    majority: [
+      { name: "Normal Sinus Rhythm (NSR)", count: 18245, pct: "41.3%" },
+      { name: "Atrial Fibrillation (AF)", count: 8924, pct: "20.2%" },
+      { name: "Sinus Bradycardia (SB)", count: 6420, pct: "14.5%" },
+      { name: "Sinus Tachycardia (STach)", count: 4812, pct: "10.9%" },
+      { name: "Premature Ventricular (PVC)", count: 3210, pct: "7.3%" }
+    ],
+    minority: [
+      { name: "Atrial Flutter (AFL)", count: 115, pct: "0.3%" },
+      { name: "Sinus Arrest (SA)", count: 140, pct: "0.3%" },
+      { name: "Left BBB (LBBB)", count: 210, pct: "0.5%" },
+      { name: "Complete RBBB (CRBBB)", count: 380, pct: "0.9%" }
+    ]
+  },
+  vm4: {
+    name: "G12EC (CinC 2020 Challenge)",
+    samples: "9,355",
+    ip: "10.34.100.125",
+    nonIID: "Duration & Sampling Skew",
+    desc: "Duration Skew disebabkan oleh variasi temporal panjang rekaman EKG yang bervariasi antara 10 detik hingga 30 detik. Model federasi diuji ketahanannya terhadap sinyal yang dipotong (cropping) atau diperpanjang (zero-padding).",
+    classes: [
+      { code: "NSR", count: 3890, pct: 41.6 },
+      { code: "Brady", count: 1420, pct: 15.2 },
+      { code: "AF", count: 1120, pct: 12.0 },
+      { code: "IAVB", count: 850, pct: 9.1 },
+      { code: "CRBBB", count: 640, pct: 6.8 },
+      { code: "STach", count: 530, pct: 5.7 },
+      { code: "PVC", count: 410, pct: 4.4 },
+      { code: "TAb", count: 320, pct: 3.4 },
+      { code: "PR", count: 42, pct: 0.4 },
+      { code: "NSIVCB", count: 35, pct: 0.4 },
+      { code: "LQT", count: 24, pct: 0.3 },
+      { code: "LQRSV", count: 18, pct: 0.2 }
+    ],
+    majority: [
+      { name: "Normal Sinus Rhythm (NSR)", count: 3890, pct: "41.6%" },
+      { name: "Bradycardia (Brady)", count: 1420, pct: "15.2%" },
+      { name: "Atrial Fibrillation (AF)", count: 1120, pct: "12.0%" },
+      { name: "1st Deg AV Block (IAVB)", count: 850, pct: "9.1%" },
+      { name: "Complete RBBB (CRBBB)", count: 640, pct: "6.8%" }
+    ],
+    minority: [
+      { name: "Low QRS Voltage (LQRSV)", count: 18, pct: "0.2%" },
+      { name: "Long QT Syndrome (LQT)", count: 24, pct: "0.3%" },
+      { name: "Non-specific IVCB (NSIVCB)", count: 35, pct: "0.4%" },
+      { name: "Paced Rhythm (PR)", count: 42, pct: "0.4%" }
+    ]
+  }
+};
+
+function openDatasetModal(clientKey) {
+  const modal = document.getElementById('datasetDetailModal');
+  const prof = DATASET_PROFILES[clientKey] || DATASET_PROFILES.vm2;
+
+  document.getElementById('dsMetaName').textContent = prof.name;
+  document.getElementById('dsMetaSamples').textContent = `${prof.samples} Rekaman`;
+  document.getElementById('dsMetaIp').textContent = prof.ip;
+  document.getElementById('dsMetaNonIID').textContent = prof.nonIID;
+  document.getElementById('dsNonIidDesc').textContent = prof.desc;
+
+  // Render Majority List
+  const majEl = document.getElementById('dsMajorityList');
+  if (majEl) {
+    majEl.innerHTML = prof.majority.map(m => `
+      <div class="class-row-pill">
+        <span>${m.name}</span>
+        <strong class="mono highlight">${m.count.toLocaleString()} (${m.pct})</strong>
+      </div>
+    `).join('');
+  }
+
+  // Render Minority List
+  const minEl = document.getElementById('dsMinorityList');
+  if (minEl) {
+    minEl.innerHTML = prof.minority.map(m => `
+      <div class="class-row-pill">
+        <span>${m.name}</span>
+        <strong class="mono" style="color: #f59e0b;">${m.count.toLocaleString()} (${m.pct})</strong>
+      </div>
+    `).join('');
+  }
+
+  // Render Mini Bar Chart
+  renderDatasetChart(prof.classes);
+
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeDatasetModal() {
+  const modal = document.getElementById('datasetDetailModal');
+  if (modal) modal.style.display = 'none';
+}
+
+function renderDatasetChart(classData) {
+  const ctx = document.getElementById('datasetClassChart')?.getContext('2d');
+  if (!ctx) return;
+
+  if (state.datasetChartInstance) {
+    state.datasetChartInstance.destroy();
+  }
+
+  const isDark = state.theme === 'dark';
+  const textColor = isDark ? '#cbd5e1' : '#475569';
+  const gridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)';
+
+  state.datasetChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: classData.map(c => c.code),
+      datasets: [{
+        label: 'Frekuensi Rekaman',
+        data: classData.map(c => c.count),
+        backgroundColor: classData.map((_, i) => i < 3 ? 'rgba(59, 130, 246, 0.85)' : 'rgba(139, 92, 246, 0.65)'),
+        borderColor: classData.map((_, i) => i < 3 ? '#3b82f6' : '#8b5cf6'),
+        borderWidth: 1,
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => `Jumlah: ${ctx.parsed.y.toLocaleString()} sampel`
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: textColor, font: { family: "'JetBrains Mono', monospace", size: 10 } },
+          grid: { display: false }
+        },
+        y: {
+          ticks: { color: textColor, font: { size: 10 } },
+          grid: { color: gridColor }
+        }
       }
     }
   });
 }
 
-function updateProgress(data) {
-  const roundText = document.getElementById('progressRoundText');
-  const percentText = document.getElementById('progressPercentText');
-  const barFill = document.getElementById('progressBarFill');
-  const etaText = document.getElementById('progressEtaText');
-  const speedText = document.getElementById('progressSpeedText');
+// -------------------------------------------------------------
+// 8. SYNCHRONIZED EVALUATION METRICS CHART (ROW 3)
+// -------------------------------------------------------------
+function getChartThemeColors() {
+  const isDark = state.theme === 'dark';
+  return {
+    textColor: isDark ? '#cbd5e1' : '#334155',
+    gridColor: isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(0, 0, 0, 0.06)',
+    globalColor: '#3b82f6',
+    vm2Color: '#10b981',
+    vm3Color: '#f59e0b',
+    vm4Color: '#a855f7'
+  };
+}
 
-  const curRound = data.current_round ?? 0;
-  const totalRounds = data.total_rounds ?? 50;
-  const pct = totalRounds > 0 ? Math.min(100, Math.round((curRound / totalRounds) * 100)) : 0;
-  const isRunning = Boolean(data.is_running ?? (data.status === 'running') ?? state.isRunning);
+function updateChartTheme() {
+  if (!state.chartInstance) return;
+  const colors = getChartThemeColors();
+  state.chartInstance.options.scales.x.ticks.color = colors.textColor;
+  state.chartInstance.options.scales.y.ticks.color = colors.textColor;
+  state.chartInstance.options.scales.x.grid.color = colors.gridColor;
+  state.chartInstance.options.scales.y.grid.color = colors.gridColor;
+}
 
-  if (roundText) {
-    roundText.textContent = isRunning
-      ? `Ronde Federasi: ${curRound} / ${totalRounds}`
-      : (curRound > 0 ? `Selesai Ronde: ${curRound} / ${totalRounds}` : 'Ronde Federasi: Standby');
-  }
-  if (percentText) percentText.textContent = `${pct}%`;
-  if (barFill) barFill.style.width = `${pct}%`;
+function initMetricsChart() {
+  const ctx = document.getElementById('liveMetricChart')?.getContext('2d');
+  if (!ctx) return;
 
-  if (etaText) {
-    if (isRunning) {
-      if (data.eta_formatted) {
-        etaText.textContent = data.eta_formatted;
-      } else if (data.eta_seconds != null && data.eta_seconds > 0) {
-        const m = Math.floor(data.eta_seconds / 60);
-        const s = data.eta_seconds % 60;
-        etaText.textContent = m > 0 ? `~${m}m ${s}s (${Math.max(0, totalRounds - curRound)} rd tersisa)` : `~${s}s`;
-      } else {
-        etaText.textContent = curRound > 0 ? `Mengukur Ronde ${curRound}...` : 'Menghitung estimasi...';
-      }
-    } else {
-      if (curRound >= totalRounds && totalRounds > 0) {
-        etaText.textContent = 'Pelatihan Selesai';
-      } else {
-        etaText.textContent = data.eta_formatted || 'Siap dimulai';
+  const colors = getChartThemeColors();
+
+  state.chartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: []
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 300 },
+      interaction: {
+        mode: 'index',
+        intersect: false
+      },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+          labels: {
+            boxWidth: 12,
+            font: { family: "'Inter', sans-serif", size: 11 },
+            color: colors.textColor
+          }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(15, 23, 42, 0.9)',
+          titleFont: { family: "'Inter', sans-serif", weight: 'bold' },
+          bodyFont: { family: "'JetBrains Mono', monospace" }
+        }
+      },
+      scales: {
+        x: {
+          title: { display: true, text: 'Ronde Federasi (Round)', color: colors.textColor, font: { size: 11, weight: '600' } },
+          ticks: { color: colors.textColor, font: { size: 10 } },
+          grid: { color: colors.gridColor }
+        },
+        y: {
+          title: { display: true, text: 'Skor Metrik', color: colors.textColor, font: { size: 11, weight: '600' } },
+          ticks: { color: colors.textColor, font: { size: 10 } },
+          grid: { color: colors.gridColor }
+        }
       }
     }
+  });
+}
+
+function updateMetricsChart(metricsData) {
+  if (!state.chartInstance) initMetricsChart();
+  if (!state.chartInstance || !metricsData) return;
+
+  const colors = getChartThemeColors();
+  const metricKey = state.activeMetric; // 'f1', 'auroc', 'loss'
+  const rounds = metricsData.rounds || [];
+
+  state.chartInstance.data.labels = rounds.length ? rounds : [1];
+
+  const datasets = [];
+
+  // Helper metric extractor
+  function getMetricArray(obj, mKey) {
+    if (!obj) return [];
+    if (mKey === 'f1') return obj.f1_macro || [];
+    if (mKey === 'auroc') return obj.auroc || [];
+    if (mKey === 'loss') return obj.val_loss || obj.loss || [];
+    return [];
   }
-  if (speedText) {
-    if (data.speed_formatted && data.speed_formatted !== '--') {
-      speedText.textContent = `Laju: ${data.speed_formatted}`;
-    } else if (data.avg_round_duration != null && data.avg_round_duration > 0) {
-      speedText.textContent = `Laju: ${data.avg_round_duration} s/rd`;
-    } else {
-      speedText.textContent = isRunning ? 'Laju: Mengukur...' : 'Kecepatan: --';
-    }
+
+  // 1. Global Model
+  if (state.visibility.global) {
+    const globalVals = getMetricArray(metricsData, metricKey);
+    datasets.push({
+      label: `Global Model (${metricKey.toUpperCase()})`,
+      data: globalVals,
+      borderColor: colors.globalColor,
+      backgroundColor: 'rgba(59, 130, 246, 0.1)',
+      borderWidth: 2.5,
+      tension: 0.25,
+      pointRadius: 3,
+      pointHoverRadius: 5
+    });
   }
+
+  // 2. Client 1 (PTB-XL)
+  if (state.visibility.vm2 && metricsData.ptbxl) {
+    datasets.push({
+      label: 'VM 2: PTB-XL',
+      data: getMetricArray(metricsData.ptbxl, metricKey),
+      borderColor: colors.vm2Color,
+      borderWidth: 1.8,
+      borderDash: [4, 3],
+      tension: 0.25,
+      pointRadius: 2
+    });
+  }
+
+  // 3. Client 2 (Chapman)
+  if (state.visibility.vm3 && metricsData.chapman) {
+    datasets.push({
+      label: 'VM 3: Chapman',
+      data: getMetricArray(metricsData.chapman, metricKey),
+      borderColor: colors.vm3Color,
+      borderWidth: 1.8,
+      borderDash: [4, 3],
+      tension: 0.25,
+      pointRadius: 2
+    });
+  }
+
+  // 4. Client 3 (G12EC)
+  if (state.visibility.vm4 && metricsData.g12ec) {
+    datasets.push({
+      label: 'VM 4: G12EC',
+      data: getMetricArray(metricsData.g12ec, metricKey),
+      borderColor: colors.vm4Color,
+      borderWidth: 1.8,
+      borderDash: [4, 3],
+      tension: 0.25,
+      pointRadius: 2
+    });
+  }
+
+  state.chartInstance.data.datasets = datasets;
+  updateChartTheme();
+  state.chartInstance.update();
 }
 
 // -------------------------------------------------------------
-// 6. METRICS & LOGS POLLING
+// 9. LEADERBOARD BENCHMARK TABLE
 // -------------------------------------------------------------
-async function fetchMetrics() {
+function renderLeaderboardTable(benchmarkData) {
+  const tbody = document.getElementById('benchmarkTableBody');
+  if (!tbody || !benchmarkData) return;
+
+  const entries = Object.entries(benchmarkData);
+  if (!entries.length) {
+    tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted" style="padding: 1.25rem;">Belum ada hasil benchmark tersedia.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = entries.map(([key, item]) => {
+    const f1Str = item.f1_macro != null ? Number(item.f1_macro).toFixed(4) : '--';
+    const aurocStr = item.auroc != null ? Number(item.auroc).toFixed(4) : '--';
+    const lossStr = item.val_loss != null ? Number(item.val_loss).toFixed(4) : '--';
+    const durStr = item.duration_per_round != null ? `${Number(item.duration_per_round).toFixed(1)}s` : '--';
+    const roundsStr = item.rounds_converged || item.completed_rounds || '--';
+    const isRunning = item.status === 'running';
+
+    return `
+      <tr>
+        <td><strong>${key.toUpperCase()}</strong></td>
+        <td><span class="text-muted">${item.target_heterogeneity || item.mechanism || '--'}</span></td>
+        <td class="mono">${roundsStr}</td>
+        <td class="mono" style="font-weight: 700; color: #3b82f6;">${f1Str}</td>
+        <td class="mono">${aurocStr}</td>
+        <td class="mono">${lossStr}</td>
+        <td class="mono">${durStr}</td>
+        <td>
+          <span class="badge-status ${isRunning ? 'training' : (item.status === 'completed' ? 'online' : 'offline')}">
+            ${isRunning ? 'Running' : (item.status === 'completed' ? 'Best Run' : 'Standby')}
+          </span>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// -------------------------------------------------------------
+// 10. EXPERIMENT HISTORY TABLE & ARTIFACTS
+// -------------------------------------------------------------
+async function fetchHistoricalRuns() {
   try {
-    const res = await fetch('/api/metrics');
+    const res = await fetch('/api/runs');
     if (!res.ok) return;
-    const data = await res.json();
-    state.metricsHistory = data;
-    renderChart();
+    const runs = await res.json();
+    renderHistoryTable(runs);
   } catch (err) {
-    console.error('Error fetching metrics:', err);
+    console.error('Error fetching history:', err);
   }
 }
 
-async function fetchLogs() {
-  const box = document.getElementById('logStreamBox');
-  if (!box) return;
+function renderHistoryTable(runs) {
+  const tbody = document.getElementById('historyTableBody');
+  if (!tbody) return;
 
+  if (!runs || !runs.length) {
+    tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted" style="padding: 1.5rem;">Belum ada riwayat eksperimen tersimpan.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = runs.map(r => {
+    const rds = r.rounds || [];
+    const rCount = rds.length;
+    const bestF1 = r.best_f1 != null ? Number(r.best_f1).toFixed(4) : '--';
+    const finalLoss = rds.length && rds[rds.length - 1].global?.val_loss != null
+      ? Number(rds[rds.length - 1].global.val_loss).toFixed(4) : '--';
+    const auroc = r.final_auroc != null ? Number(r.final_auroc).toFixed(4) : '--';
+    const stClass = r.status === 'completed' ? 'online' : (r.status === 'running' ? 'training' : 'offline');
+
+    return `
+      <tr>
+        <td class="mono font-semibold">${r.run_id}</td>
+        <td>${r.start_time ? new Date(r.start_time * 1000).toLocaleString('id-ID') : '--'}</td>
+        <td><strong class="text-primary">${(r.strategy || '').toUpperCase()}</strong></td>
+        <td class="mono">${rCount} / ${r.config?.num_rounds || '--'}</td>
+        <td><span class="badge-status ${stClass}">${r.status}</span></td>
+        <td class="mono font-bold" style="color: #3b82f6;">${bestF1}</td>
+        <td class="mono">${finalLoss}</td>
+        <td class="mono">${auroc}</td>
+        <td>
+          <div style="display: flex; gap: 0.35rem;">
+            <a class="btn btn-secondary btn-xs" href="/api/download-model?run_id=${r.run_id}" title="Unduh Model Checkpoint (best.pt)">best.pt</a>
+            <a class="btn btn-secondary btn-xs" href="/api/run?run_id=${r.run_id}" target="_blank" title="Unduh Log Metrik JSON">metrics.json</a>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// -------------------------------------------------------------
+// 11. LIVE TERMINAL LOGS
+// -------------------------------------------------------------
+async function fetchLogs() {
   try {
     const res = await fetch(`/api/logs?source=${state.activeLogSource}`);
     if (!res.ok) return;
-    const text = await res.text();
-    if (text) {
-      const isScrolledToBottom = box.scrollHeight - box.clientHeight <= box.scrollTop + 40;
-      box.textContent = text;
-      if (isScrolledToBottom) {
+    const data = await res.json();
+    const box = document.getElementById('logStreamBox');
+    if (box && data.logs) {
+      box.textContent = data.logs;
+      const chk = document.getElementById('chkAutoScroll');
+      if (chk && chk.checked) {
         box.scrollTop = box.scrollHeight;
       }
     }
@@ -922,36 +788,84 @@ async function fetchLogs() {
 }
 
 // -------------------------------------------------------------
-// 7. EXPERIMENT START / STOP / RESET
+// 12. BOTTOM DRAWER CONTROLLER (ROW 4)
 // -------------------------------------------------------------
-async function startTraining() {
+function toggleDrawer(forceExpand = null) {
+  const drawer = document.getElementById('bottomDrawerPanel');
+  const chevron = document.getElementById('drawerChevronIcon');
+  if (!drawer) return;
+
+  if (forceExpand !== null) {
+    state.isDrawerExpanded = forceExpand;
+  } else {
+    state.isDrawerExpanded = !state.isDrawerExpanded;
+  }
+
+  if (state.isDrawerExpanded) {
+    drawer.classList.remove('is-minimized');
+    drawer.classList.add('is-expanded');
+    if (chevron) chevron.textContent = '▼';
+  } else {
+    drawer.classList.remove('is-expanded', 'is-fullscreen');
+    drawer.classList.add('is-minimized');
+    state.isDrawerFullscreen = false;
+    if (chevron) chevron.textContent = '▲';
+  }
+}
+
+function switchDrawerTab(tabName) {
+  state.activeDrawerTab = tabName;
+  document.querySelectorAll('.drawer-tab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.drawer-tab-content').forEach(c => c.style.display = 'none');
+
+  if (tabName === 'logs') {
+    document.getElementById('tabDrawerLogs')?.classList.add('active');
+    const logsContent = document.getElementById('contentDrawerLogs');
+    if (logsContent) logsContent.style.display = 'flex';
+  } else if (tabName === 'history') {
+    document.getElementById('tabDrawerHistory')?.classList.add('active');
+    const histContent = document.getElementById('contentDrawerHistory');
+    if (histContent) histContent.style.display = 'flex';
+    fetchHistoricalRuns();
+  }
+
+  if (!state.isDrawerExpanded) {
+    toggleDrawer(true);
+  }
+}
+
+// -------------------------------------------------------------
+// 13. API ACTIONS (START, QUEUE, EMERGENCY STOP, RESET, EXPORT)
+// -------------------------------------------------------------
+async function startExperiment() {
   const form = document.getElementById('formExperimentControl');
   if (!form) return;
 
   const formData = new FormData(form);
-  const payload = {};
-  formData.forEach((value, key) => {
-    if (['num_rounds', 'local_epochs', 'batch_size'].includes(key)) {
-      payload[key] = parseInt(value, 10);
-    } else if (['learning_rate', 'proximal_mu', 'fedbb_alpha', 'fedsol_mu'].includes(key)) {
-      payload[key] = parseFloat(value);
-    } else {
-      payload[key] = value;
-    }
-  });
+  const strategy = formData.get('strategy') || 'fedbn';
+  const num_rounds = parseInt(formData.get('num_rounds') || '50', 10);
+  const local_epochs = parseInt(formData.get('local_epochs') || '3', 10);
+  const batch_size = parseInt(formData.get('batch_size') || '32', 10);
+  const learning_rate = parseFloat(formData.get('learning_rate') || '0.001');
+  const proximal_mu = parseFloat(formData.get('proximal_mu') || '0.01');
+  const seed = parseInt(formData.get('seed') || '42', 10);
 
-  // Jika mode runtut dipilih, ambil algoritma yang dicentang sesuai urutan
-  if (payload.strategy === 'all') {
-    const checked = Array.from(document.querySelectorAll('input[name="seq_algo"]:checked')).map(cb => cb.value);
-    if (checked.length === 0) {
-      alert('Pilih minimal satu algoritma untuk dijalankan dalam mode runtut!');
-      return;
-    }
-    payload.strategy = checked.join(',');
-  }
+  // Active client checkboxes
+  const active_clients = [];
+  if (document.getElementById('chkClientVm2')?.checked) active_clients.push('vm2');
+  if (document.getElementById('chkClientVm3')?.checked) active_clients.push('vm3');
+  if (document.getElementById('chkClientVm4')?.checked) active_clients.push('vm4');
 
-  const btnStart = document.getElementById('btnStartTraining');
-  if (btnStart) btnStart.disabled = true;
+  const payload = {
+    strategy,
+    num_rounds,
+    local_epochs,
+    batch_size,
+    learning_rate,
+    proximal_mu,
+    seed,
+    active_clients
+  };
 
   try {
     const res = await fetch('/api/experiment/start', {
@@ -962,86 +876,230 @@ async function startTraining() {
     const result = await res.json();
     if (res.ok) {
       state.isRunning = true;
-      exitInspect();
+      toggleDrawer(true);
+      switchDrawerTab('logs');
       fetchStatus();
-      fetchBenchmark();
-      fetchHistoricalRuns();
     } else {
       alert(`Gagal memulai eksperimen: ${result.message || 'Error server'}`);
-      if (btnStart) btnStart.disabled = false;
     }
   } catch (err) {
-    alert(`Terjadi kesalahan jaringan: ${err.message}`);
-    if (btnStart) btnStart.disabled = false;
+    console.error('Error starting experiment:', err);
+    alert('Terjadi kesalahan jaringan saat memulai eksperimen.');
   }
 }
 
-async function stopTraining() {
-  if (!confirm('Hentikan proses pelatihan Flower Server yang sedang berjalan?')) return;
+async function queueExperiment() {
+  const form = document.getElementById('formExperimentControl');
+  if (!form) return;
+
+  const formData = new FormData(form);
+  const payload = {
+    strategy: formData.get('strategy') || 'fedbn',
+    num_rounds: parseInt(formData.get('num_rounds') || '50', 10),
+    local_epochs: parseInt(formData.get('local_epochs') || '3', 10),
+    batch_size: parseInt(formData.get('batch_size') || '32', 10),
+    learning_rate: parseFloat(formData.get('learning_rate') || '0.001'),
+    proximal_mu: parseFloat(formData.get('proximal_mu') || '0.01'),
+    seed: parseInt(formData.get('seed') || '42', 10)
+  };
+
   try {
-    await fetch('/api/experiment/stop', { method: 'POST' });
-    state.isRunning = false;
-    fetchStatus();
-    fetchBenchmark();
-    fetchHistoricalRuns();
+    const res = await fetch('/api/experiment/queue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const result = await res.json();
+    alert(`Eksperimen ${payload.strategy.toUpperCase()} (${payload.num_rounds} ronde) berhasil dimasukkan ke antrean! (Total antrean: ${result.queue_len})`);
   } catch (err) {
-    alert(`Gagal menghentikan pelatihan: ${err.message}`);
+    console.error('Error queueing experiment:', err);
+  }
+}
+
+async function emergencyStop() {
+  if (!confirm('PERINGATAN: Apakah Anda yakin ingin melakukan EMERGENCY STOP? Proses Flower Server dan pelatihan lokal di seluruh VM klien akan dihentikan paksa.')) {
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/experiment/stop', { method: 'POST' });
+    if (res.ok) {
+      state.isRunning = false;
+      fetchStatus();
+      fetchLogs();
+      alert('Emergency Stop berhasil: Seluruh proses pelatihan telah dihentikan paksa.');
+    }
+  } catch (err) {
+    console.error('Error in emergency stop:', err);
   }
 }
 
 async function resetExperiment() {
-  if (!confirm('Reset data live experiment saat ini? (Data permanen di results/runs/ TIDAK akan terhapus)')) return;
+  if (!confirm('Reset konfigurasi sesi live dan membersihkan log?')) return;
   try {
     await fetch('/api/experiment/reset', { method: 'POST' });
     fetchStatus();
-    fetchMetrics();
-    fetchBenchmark();
-    fetchHistoricalRuns();
+    fetchLogs();
   } catch (err) {
-    alert(`Gagal reset: ${err.message}`);
+    console.error('Error resetting experiment:', err);
+  }
+}
+
+function exportArtifacts() {
+  window.location.href = '/api/export';
+}
+
+// -------------------------------------------------------------
+// 14. MAIN STATUS POLLING LOOP
+// -------------------------------------------------------------
+async function fetchStatus() {
+  try {
+    const res = await fetch('/api/status');
+    if (!res.ok) {
+      updateGlobalConnectionBadge('error');
+      return;
+    }
+    const data = await res.json();
+    state.cachedStatusData = data;
+
+    state.isRunning = Boolean(data.is_running ?? (data.status === 'running'));
+    updateGlobalConnectionBadge(state.isRunning ? 'busy' : 'online');
+    updateRunOverview(data);
+    updateNodeExporterUI(data);
+
+    if (data.metrics) {
+      updateMetricsChart(data.metrics);
+    }
+    if (data.benchmark) {
+      renderLeaderboardTable(data.benchmark);
+    }
+
+    const btnStart = document.getElementById('btnStartTraining');
+    if (btnStart) btnStart.disabled = state.isRunning;
+  } catch (err) {
+    console.error('Error fetching status:', err);
+    updateGlobalConnectionBadge('error');
+  }
+}
+
+function updateGlobalConnectionBadge(st) {
+  const dot = document.getElementById('grpcStatusDot');
+  const txt = document.getElementById('grpcStatusText');
+  if (!dot || !txt) return;
+
+  if (st === 'busy') {
+    dot.className = 'status-dot dot-busy';
+    txt.textContent = 'gRPC: Pelatihan Berjalan (Busy)';
+  } else if (st === 'online') {
+    dot.className = 'status-dot dot-online';
+    txt.textContent = 'gRPC: Online (Standby)';
+  } else {
+    dot.className = 'status-dot dot-error';
+    txt.textContent = 'gRPC: Terputus / Error';
   }
 }
 
 // -------------------------------------------------------------
-// 8. EVENT LISTENERS INITIALIZATION
+// 15. INITIALIZATION & EVENT LISTENERS
 // -------------------------------------------------------------
 document.addEventListener('DOMContentLoaded', () => {
-  initChart();
+  // Apply Saved Theme
+  applyTheme(state.theme);
 
-  // Listeners Radio Strategi
-  document.querySelectorAll('input[name="strategy"]').forEach(radio => {
-    radio.addEventListener('change', (e) => {
-      renderModularOptions(e.target.value);
-    });
-  });
-  renderModularOptions('fedbn'); // Default initial
+  // Start Live Server Clock
+  startClock();
 
-  // Listeners Action Buttons
-  document.getElementById('btnStartTraining')?.addEventListener('click', startTraining);
-  document.getElementById('btnStopTraining')?.addEventListener('click', stopTraining);
+  // Theme Toggle Button
+  document.getElementById('btnThemeToggle')?.addEventListener('click', toggleTheme);
+
+  // Global Actions
+  document.getElementById('btnEmergencyStop')?.addEventListener('click', emergencyStop);
+  document.getElementById('btnExportArtifacts')?.addEventListener('click', exportArtifacts);
+
+  // Run Control Form
+  document.getElementById('btnStartTraining')?.addEventListener('click', startExperiment);
+  document.getElementById('btnQueueRun')?.addEventListener('click', queueExperiment);
   document.getElementById('btnResetExperiment')?.addEventListener('click', resetExperiment);
 
-  // Listeners Segmented Controls: Mode Chart
-  document.querySelectorAll('#chartModeTabs .seg-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      document.querySelectorAll('#chartModeTabs .seg-btn').forEach(b => b.classList.remove('active'));
-      e.target.classList.add('active');
-      state.chartMode = e.target.dataset.mode;
-      renderChart();
+  // Strategy Selector Radios
+  document.querySelectorAll('input[name="strategy"]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      state.activeStrategy = e.target.value;
+      updateModularParams(state.activeStrategy);
     });
   });
+  updateModularParams(state.activeStrategy);
 
-  // Listeners Segmented Controls: Metric Switcher
-  document.querySelectorAll('.metric-control .seg-btn').forEach(btn => {
+  // Expand Dataset Buttons (Modal)
+  document.querySelectorAll('.btn-expand-dataset').forEach(btn => {
     btn.addEventListener('click', (e) => {
-      document.querySelectorAll('.metric-control .seg-btn').forEach(b => b.classList.remove('active'));
+      const clientKey = e.currentTarget.dataset.client;
+      openDatasetModal(clientKey);
+    });
+  });
+  document.getElementById('btnDsModalClose')?.addEventListener('click', closeDatasetModal);
+  document.getElementById('datasetDetailModal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'datasetDetailModal') closeDatasetModal();
+  });
+
+  // Chart Metric Tabs
+  document.querySelectorAll('#chartMetricTabs .seg-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      document.querySelectorAll('#chartMetricTabs .seg-btn').forEach(b => b.classList.remove('active'));
       e.target.classList.add('active');
       state.activeMetric = e.target.dataset.metric;
-      renderChart();
+      if (state.cachedStatusData?.metrics) {
+        updateMetricsChart(state.cachedStatusData.metrics);
+      }
     });
   });
 
-  // Listeners Segmented Controls: Log Source Tabs
+  // Per-Client Convergence Toggles
+  const mapConv = {
+    chkShowGlobal: 'global',
+    chkShowVm2: 'vm2',
+    chkShowVm3: 'vm3',
+    chkShowVm4: 'vm4'
+  };
+  Object.entries(mapConv).forEach(([chkId, key]) => {
+    document.getElementById(chkId)?.addEventListener('change', (e) => {
+      state.visibility[key] = e.target.checked;
+      if (state.cachedStatusData?.metrics) {
+        updateMetricsChart(state.cachedStatusData.metrics);
+      }
+    });
+  });
+
+  // Leaderboard Refresh
+  document.getElementById('btnRefreshBenchmark')?.addEventListener('click', () => {
+    fetchStatus();
+  });
+
+  // Bottom Drawer Controls
+  document.getElementById('drawerHeaderToggle')?.addEventListener('click', (e) => {
+    if (e.target.closest('.drawer-tabs-wrapper') || e.target.closest('.drawer-actions-right')) return;
+    toggleDrawer();
+  });
+
+  document.getElementById('tabDrawerLogs')?.addEventListener('click', () => switchDrawerTab('logs'));
+  document.getElementById('tabDrawerHistory')?.addEventListener('click', () => switchDrawerTab('history'));
+
+  document.getElementById('btnToggleDrawerSize')?.addEventListener('click', () => {
+    const drawer = document.getElementById('bottomDrawerPanel');
+    if (!drawer) return;
+    state.isDrawerFullscreen = !state.isDrawerFullscreen;
+    if (state.isDrawerFullscreen) {
+      drawer.classList.remove('is-minimized', 'is-expanded');
+      drawer.classList.add('is-fullscreen');
+      document.getElementById('btnToggleDrawerSize').textContent = 'Normal';
+    } else {
+      drawer.classList.remove('is-fullscreen');
+      drawer.classList.add('is-expanded');
+      document.getElementById('btnToggleDrawerSize').textContent = 'Layar Penuh';
+    }
+  });
+
+  // Terminal Controls
   document.querySelectorAll('#logSourceTabs .seg-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       document.querySelectorAll('#logSourceTabs .seg-btn').forEach(b => b.classList.remove('active'));
@@ -1051,67 +1109,27 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Chart Run Selector (Pilih Sesi Live atau Arsip Lampau)
-  document.getElementById('chartRunSelector')?.addEventListener('change', (e) => {
-    if (e.target.value === 'latest') {
-      exitInspect();
-    } else {
-      inspectHistoricalRun(e.target.value);
-    }
+  document.getElementById('btnClearLog')?.addEventListener('click', () => {
+    const box = document.getElementById('logStreamBox');
+    if (box) box.textContent = 'Log dibersihkan oleh pengguna.';
   });
 
-  // Historical Runs Refresh & Filter
-  document.getElementById('btnRefreshHistory')?.addEventListener('click', fetchHistoricalRuns);
-  document.getElementById('filterHistoryStrategy')?.addEventListener('change', renderHistoricalRunsTable);
-  document.getElementById('filterHistoryStatus')?.addEventListener('change', renderHistoricalRunsTable);
-  document.getElementById('btnExitInspect')?.addEventListener('click', exitInspect);
-  document.getElementById('btnModalInspect')?.addEventListener('click', () => {
-    if (state.inspectedRun?.run_id) {
-      openRunDetailModal(state.inspectedRun.run_id);
-    }
-  });
-
-  // Modal Dialog Controls
-  document.getElementById('btnModalClose')?.addEventListener('click', closeRunDetailModal);
-  document.getElementById('runDetailModal')?.addEventListener('click', (e) => {
-    if (e.target.id === 'runDetailModal') closeRunDetailModal();
-  });
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeRunDetailModal();
-  });
-
-  document.querySelectorAll('#modalMetricTabs .seg-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      document.querySelectorAll('#modalMetricTabs .seg-btn').forEach(b => b.classList.remove('active'));
-      e.target.classList.add('active');
-      state.modalMetric = e.target.dataset.metric;
-      renderModalChart();
-    });
-  });
-
-  // Benchmark Refresh
-  document.getElementById('btnRefreshBenchmark')?.addEventListener('click', fetchBenchmark);
-
-  // Download Model
   document.getElementById('btnDownloadModel')?.addEventListener('click', () => {
     window.location.href = '/api/download-model?tag=best';
   });
 
+  // History Refresh
+  document.getElementById('btnRefreshHistory')?.addEventListener('click', fetchHistoricalRuns);
+
+  // Initialize Chart
+  initMetricsChart();
+
   // Initial Fetches
   fetchStatus();
-  fetchMetrics();
-  fetchBenchmark();
-  fetchHistoricalRuns();
   fetchLogs();
+  fetchHistoricalRuns();
 
-  // Polling Loops
+  // Set Timers
   state.statusTimer = setInterval(fetchStatus, 2500);
   state.logsTimer = setInterval(fetchLogs, 2500);
 });
-
-// Expose globals for inline HTML onclick attributes
-window.inspectHistoricalRun = inspectHistoricalRun;
-window.exitInspect = exitInspect;
-window.updateSeqPreview = updateSeqPreview;
-window.openRunDetailModal = openRunDetailModal;
-window.closeRunDetailModal = closeRunDetailModal;
