@@ -1350,6 +1350,15 @@ body.theme-light .theme-icon-sun { display: inline-block; }
 .pill-vm3 { color: #f59e0b; }
 .pill-vm4 { color: #a855f7; }
 
+/* Strategy Pills */
+.pill-fedavg { color: #2563eb; font-weight: 700; }
+.pill-fedprox { color: #f97316; font-weight: 700; }
+.pill-scaffold { color: #10b981; font-weight: 700; }
+.pill-fedbn { color: #8b5cf6; font-weight: 700; }
+.pill-fedbb { color: #ec4899; font-weight: 700; }
+.pill-fedsol { color: #06b6d4; font-weight: 700; }
+.pill-vm4 { color: #a855f7; }
+
 .chart-wrapper {
   position: relative;
   height: 290px;

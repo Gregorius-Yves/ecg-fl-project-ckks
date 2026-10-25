@@ -12,6 +12,7 @@ const state = {
   isRunning: false,
   activeStrategy: 'fedbn',
   activeMetric: 'f1',
+  chartViewMode: 'comparison', // 'comparison' or 'clients'
   activeLogSource: 'server',
   activeDrawerTab: 'logs',
   isDrawerExpanded: false,
@@ -31,6 +32,14 @@ const state = {
     vm2: true,
     vm3: true,
     vm4: true
+  },
+  stratVisibility: {
+    fedavg: true,
+    fedprox: true,
+    scaffold: true,
+    fedbn: true,
+    fedbb: true,
+    fedsol: true
   }
 };
 
@@ -596,15 +605,10 @@ function initMetricsChart() {
 
 function updateMetricsChart(metricsData) {
   if (!state.chartInstance) initMetricsChart();
-  if (!state.chartInstance || !metricsData) return;
+  if (!state.chartInstance) return;
 
   const colors = getChartThemeColors();
   const metricKey = state.activeMetric; // 'f1', 'auroc', 'loss'
-  const rounds = metricsData.rounds || [];
-
-  state.chartInstance.data.labels = rounds.length ? rounds : [1];
-
-  const datasets = [];
 
   // Helper metric extractor
   function getMetricArray(obj, mKey) {
@@ -615,58 +619,117 @@ function updateMetricsChart(metricsData) {
     return [];
   }
 
-  // 1. Global Model
-  if (state.visibility.global) {
-    const globalVals = getMetricArray(metricsData, metricKey);
-    datasets.push({
-      label: `Global Model (${metricKey.toUpperCase()})`,
-      data: globalVals,
-      borderColor: colors.globalColor,
-      backgroundColor: 'rgba(59, 130, 246, 0.1)',
-      borderWidth: 2.5,
-      tension: 0.25,
-      pointRadius: 3,
-      pointHoverRadius: 5
-    });
-  }
+  const datasets = [];
 
-  // 2. Client 1 (PTB-XL)
-  if (state.visibility.vm2 && metricsData.ptbxl) {
-    datasets.push({
-      label: 'VM 2: PTB-XL',
-      data: getMetricArray(metricsData.ptbxl, metricKey),
-      borderColor: colors.vm2Color,
-      borderWidth: 1.8,
-      borderDash: [4, 3],
-      tension: 0.25,
-      pointRadius: 2
-    });
-  }
+  // ==========================================
+  // MODE 1: KOMPARASI 6 METODE FEDERATED LEARNING
+  // ==========================================
+  if (state.chartViewMode === 'comparison' && !state.inspectedRun) {
+    const compData = state.cachedStatusData?.strategy_comparison || {};
+    const strats = compData.strategies || {};
+    const stratColors = {
+      fedavg: '#2563eb',
+      fedprox: '#f97316',
+      scaffold: '#10b981',
+      fedbn: '#8b5cf6',
+      fedbb: '#ec4899',
+      fedsol: '#06b6d4'
+    };
+    const stratLabels = {
+      fedavg: 'FedAvg',
+      fedprox: 'FedProx',
+      scaffold: 'SCAFFOLD',
+      fedbn: 'FedBN',
+      fedbb: 'FedBB',
+      fedsol: 'FedSOL'
+    };
 
-  // 3. Client 2 (Chapman)
-  if (state.visibility.vm3 && metricsData.chapman) {
-    datasets.push({
-      label: 'VM 3: Chapman',
-      data: getMetricArray(metricsData.chapman, metricKey),
-      borderColor: colors.vm3Color,
-      borderWidth: 1.8,
-      borderDash: [4, 3],
-      tension: 0.25,
-      pointRadius: 2
-    });
-  }
+    let maxRounds = compData.rounds || [];
+    if (!maxRounds.length) {
+      Object.values(strats).forEach(s => {
+        if ((s.rounds || []).length > maxRounds.length) maxRounds = s.rounds;
+      });
+    }
+    state.chartInstance.data.labels = maxRounds.length ? maxRounds : [1];
 
-  // 4. Client 3 (G12EC)
-  if (state.visibility.vm4 && metricsData.g12ec) {
-    datasets.push({
-      label: 'VM 4: G12EC',
-      data: getMetricArray(metricsData.g12ec, metricKey),
-      borderColor: colors.vm4Color,
-      borderWidth: 1.8,
-      borderDash: [4, 3],
-      tension: 0.25,
-      pointRadius: 2
+    Object.entries(stratLabels).forEach(([sKey, sLabel]) => {
+      if (state.stratVisibility[sKey]) {
+        const sObj = strats[sKey] || {};
+        const sVals = getMetricArray(sObj, metricKey);
+        datasets.push({
+          label: `${sLabel} (${metricKey.toUpperCase()})`,
+          data: sVals,
+          borderColor: stratColors[sKey],
+          backgroundColor: 'transparent',
+          borderWidth: 2.4,
+          tension: 0.25,
+          pointRadius: 3,
+          pointHoverRadius: 6
+        });
+      }
     });
+
+  } else {
+    // ==========================================
+    // MODE 2: SESI TUNGGAL / PER-KLIEN CONVERGENCE
+    // ==========================================
+    const targetData = (state.inspectedRun ? convertRunToMetricsData(state.inspectedRun) : (metricsData || state.cachedStatusData?.metrics || {}));
+    const rounds = targetData.rounds || [];
+    state.chartInstance.data.labels = rounds.length ? rounds : [1];
+
+    // 1. Global Model
+    if (state.visibility.global) {
+      const globalVals = getMetricArray(targetData, metricKey);
+      datasets.push({
+        label: `Global Model (${metricKey.toUpperCase()})`,
+        data: globalVals,
+        borderColor: colors.globalColor,
+        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+        borderWidth: 2.5,
+        tension: 0.25,
+        pointRadius: 3,
+        pointHoverRadius: 5
+      });
+    }
+
+    // 2. Client 1 (PTB-XL)
+    if (state.visibility.vm2 && targetData.ptbxl) {
+      datasets.push({
+        label: 'VM 2: PTB-XL',
+        data: getMetricArray(targetData.ptbxl, metricKey),
+        borderColor: colors.vm2Color,
+        borderWidth: 1.8,
+        borderDash: [4, 3],
+        tension: 0.25,
+        pointRadius: 2
+      });
+    }
+
+    // 3. Client 2 (Chapman)
+    if (state.visibility.vm3 && targetData.chapman) {
+      datasets.push({
+        label: 'VM 3: Chapman',
+        data: getMetricArray(targetData.chapman, metricKey),
+        borderColor: colors.vm3Color,
+        borderWidth: 1.8,
+        borderDash: [4, 3],
+        tension: 0.25,
+        pointRadius: 2
+      });
+    }
+
+    // 4. Client 3 (G12EC)
+    if (state.visibility.vm4 && targetData.g12ec) {
+      datasets.push({
+        label: 'VM 4: G12EC',
+        data: getMetricArray(targetData.g12ec, metricKey),
+        borderColor: colors.vm4Color,
+        borderWidth: 1.8,
+        borderDash: [4, 3],
+        tension: 0.25,
+        pointRadius: 2
+      });
+    }
   }
 
   state.chartInstance.data.datasets = datasets;
@@ -688,30 +751,46 @@ function renderLeaderboardTable(benchmarkData) {
   }
 
   tbody.innerHTML = entries.map(([key, item]) => {
-    const f1Str = item.f1_macro != null ? Number(item.f1_macro).toFixed(4) : '--';
+    const bestF1Val = item.best_f1 ?? item.macro_f1 ?? item.f1_macro;
+    const f1Str = bestF1Val != null ? Number(bestF1Val).toFixed(4) : '--';
     const aurocStr = item.auroc != null ? Number(item.auroc).toFixed(4) : '--';
-    const lossStr = item.val_loss != null ? Number(item.val_loss).toFixed(4) : '--';
-    const durStr = item.duration_per_round != null ? `${Number(item.duration_per_round).toFixed(1)}s` : '--';
-    const roundsStr = item.rounds_converged || item.completed_rounds || '--';
+    const lossVal = item.final_loss ?? item.val_loss;
+    const lossStr = lossVal != null ? Number(lossVal).toFixed(4) : '--';
+    const durVal = item.speed_sec ?? item.duration_per_round;
+    const durStr = durVal != null && Number(durVal) > 0 ? `${Number(durVal).toFixed(1)}s` : '--';
+    const roundsDone = item.rounds_done ?? item.completed_rounds;
+    const roundsStr = roundsDone ? `${roundsDone} R` : (item.rounds_converged || '--');
     const isRunning = item.status === 'running';
+    const hasBestModel = Boolean(item.best_f1 != null || item.run_id);
 
     return `
       <tr>
         <td><strong>${key.toUpperCase()}</strong></td>
-        <td><span class="text-muted">${item.target_heterogeneity || item.mechanism || '--'}</span></td>
-        <td class="mono">${roundsStr}</td>
-        <td class="mono" style="font-weight: 700; color: #3b82f6;">${f1Str}</td>
+        <td><span class="text-muted">${item.target_heterogeneity || item.target || item.mechanism || '--'}</span></td>
+        <td class="mono font-semibold">${roundsStr}</td>
+        <td class="mono" style="font-weight: 800; color: #3b82f6; font-size: 0.78rem;">${f1Str}</td>
         <td class="mono">${aurocStr}</td>
         <td class="mono">${lossStr}</td>
         <td class="mono">${durStr}</td>
         <td>
-          <span class="badge-status ${isRunning ? 'training' : (item.status === 'completed' ? 'online' : 'offline')}">
-            ${isRunning ? 'Running' : (item.status === 'completed' ? 'Best Run' : 'Standby')}
-          </span>
+          <div style="display: flex; gap: 0.35rem; align-items: center;">
+            <span class="badge-status ${isRunning ? 'training' : (item.status === 'completed' ? 'online' : (hasBestModel ? 'online' : 'offline'))}">
+              ${isRunning ? 'Running' : (hasBestModel ? 'Best Run' : 'Standby')}
+            </span>
+            ${item.run_id ? `<button type="button" class="btn btn-secondary btn-xs btn-inspect-run" data-runid="${item.run_id}" title="Inspeksi kurva run terbaik metode ini">🔍</button>` : ''}
+          </div>
         </td>
       </tr>
     `;
   }).join('');
+
+  // Re-attach inspect click listeners for leaderboard buttons
+  tbody.querySelectorAll('.btn-inspect-run').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const runId = e.currentTarget.dataset.runid;
+      if (runId) inspectHistoricalRun(runId);
+    });
+  });
 }
 
 // -------------------------------------------------------------
@@ -1209,17 +1288,57 @@ document.addEventListener('DOMContentLoaded', () => {
   // Exit Inspect Button
   document.getElementById('btnExitInspect')?.addEventListener('click', exitInspect);
 
+  // Chart View Mode Tabs: Komparasi 6 Metode vs Sesi / Per-Klien
+  document.querySelectorAll('#chartViewModeTabs .seg-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      document.querySelectorAll('#chartViewModeTabs .seg-btn').forEach(b => b.classList.remove('active'));
+      e.target.classList.add('active');
+      state.chartViewMode = e.target.dataset.viewmode;
+
+      const stripStrats = document.getElementById('stripStrategiesToggles');
+      const stripClients = document.getElementById('stripClientsToggles');
+      const selBox = document.getElementById('chartRunSelectorBox');
+      const subtitle = document.getElementById('metricPlotSubtitle');
+
+      if (state.chartViewMode === 'comparison') {
+        if (stripStrats) stripStrats.style.display = 'flex';
+        if (stripClients) stripClients.style.display = 'none';
+        if (selBox) selBox.style.display = 'none';
+        if (subtitle) subtitle.textContent = 'Perbandingan performa konvergensi global 6 metode FL (FedAvg, FedProx, SCAFFOLD, FedBN, FedBB, FedSOL)';
+        if (state.inspectedRun) exitInspect();
+      } else {
+        if (stripStrats) stripStrats.style.display = 'none';
+        if (stripClients) stripClients.style.display = 'flex';
+        if (selBox) selBox.style.display = 'inline-flex';
+        if (subtitle) subtitle.textContent = 'Performa model global dan per-client convergence untuk deteksi drift';
+      }
+      updateMetricsChart();
+    });
+  });
+
+  // 6 Strategies Comparison Checkbox Toggles
+  const mapStrats = {
+    chkStratFedavg: 'fedavg',
+    chkStratFedprox: 'fedprox',
+    chkStratScaffold: 'scaffold',
+    chkStratFedbn: 'fedbn',
+    chkStratFedbb: 'fedbb',
+    chkStratFedsol: 'fedsol'
+  };
+  Object.entries(mapStrats).forEach(([chkId, key]) => {
+    document.getElementById(chkId)?.addEventListener('change', (e) => {
+      state.stratVisibility[key] = e.target.checked;
+      updateMetricsChart();
+    });
+  });
+
   // Chart Metric Tabs
   document.querySelectorAll('#chartMetricTabs .seg-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       document.querySelectorAll('#chartMetricTabs .seg-btn').forEach(b => b.classList.remove('active'));
       e.target.classList.add('active');
       state.activeMetric = e.target.dataset.metric;
-      if (state.inspectedRun) {
-        updateMetricsChart(convertRunToMetricsData(state.inspectedRun));
-      } else if (state.cachedStatusData?.metrics) {
-        updateMetricsChart(state.cachedStatusData.metrics);
-      }
+      updateMetricsChart();
     });
   });
 
@@ -1233,11 +1352,7 @@ document.addEventListener('DOMContentLoaded', () => {
   Object.entries(mapConv).forEach(([chkId, key]) => {
     document.getElementById(chkId)?.addEventListener('change', (e) => {
       state.visibility[key] = e.target.checked;
-      if (state.inspectedRun) {
-        updateMetricsChart(convertRunToMetricsData(state.inspectedRun));
-      } else if (state.cachedStatusData?.metrics) {
-        updateMetricsChart(state.cachedStatusData.metrics);
-      }
+      updateMetricsChart();
     });
   });
 

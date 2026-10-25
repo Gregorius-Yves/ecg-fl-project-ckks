@@ -744,12 +744,18 @@
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
               Kurva Konvergensi Metrik Real-Time
             </div>
-            <div class="card-subtitle" id="metricPlotSubtitle">Performa model global dan per-client convergence untuk deteksi drift</div>
+            <div class="card-subtitle" id="metricPlotSubtitle">Perbandingan performa 6 algoritma FL atau konvergensi per-node klien</div>
           </div>
 
           <div class="chart-controls-wrapper">
+            <!-- Mode Switcher: Comparison vs Clients -->
+            <div class="segmented-control" id="chartViewModeTabs">
+              <button type="button" class="seg-btn active" data-viewmode="comparison">Komparasi 6 Metode</button>
+              <button type="button" class="seg-btn" data-viewmode="clients">Sesi / Per-Klien</button>
+            </div>
+
             <!-- Run Selector (Live vs Archive) -->
-            <div class="run-selector-box">
+            <div class="run-selector-box" id="chartRunSelectorBox" style="display: none;">
               <label for="chartRunSelector" class="form-label-xs">Sesi:</label>
               <select id="chartRunSelector" class="form-select-sm">
                 <option value="latest">⚡ Sesi Terakhir (Live / Default)</option>
@@ -758,16 +764,45 @@
 
             <!-- Metric Switcher -->
             <div class="segmented-control metric-control" id="chartMetricTabs">
-              <button class="seg-btn active" data-metric="f1">Macro-F1</button>
-              <button class="seg-btn" data-metric="auroc">AUROC</button>
-              <button class="seg-btn" data-metric="loss">Loss</button>
+              <button type="button" class="seg-btn active" data-metric="f1">Macro-F1</button>
+              <button type="button" class="seg-btn" data-metric="auroc">AUROC</button>
+              <button type="button" class="seg-btn" data-metric="loss">Loss</button>
             </div>
           </div>
         </div>
 
         <div class="card-body">
-          <!-- PER-CLIENT CONVERGENCE CHECKLIST STRIP -->
-          <div class="convergence-toggles-strip">
+          <!-- STRIP 1: 6 STRATEGIES COMPARISON CHECKLIST -->
+          <div class="convergence-toggles-strip" id="stripStrategiesToggles">
+            <span class="conv-label">Metode FL:</span>
+            <label class="conv-check conv-strat">
+              <input type="checkbox" id="chkStratFedavg" checked>
+              <span class="conv-pill pill-fedavg">FedAvg</span>
+            </label>
+            <label class="conv-check conv-strat">
+              <input type="checkbox" id="chkStratFedprox" checked>
+              <span class="conv-pill pill-fedprox">FedProx</span>
+            </label>
+            <label class="conv-check conv-strat">
+              <input type="checkbox" id="chkStratScaffold" checked>
+              <span class="conv-pill pill-scaffold">SCAFFOLD</span>
+            </label>
+            <label class="conv-check conv-strat">
+              <input type="checkbox" id="chkStratFedbn" checked>
+              <span class="conv-pill pill-fedbn">FedBN</span>
+            </label>
+            <label class="conv-check conv-strat">
+              <input type="checkbox" id="chkStratFedbb" checked>
+              <span class="conv-pill pill-fedbb">FedBB</span>
+            </label>
+            <label class="conv-check conv-strat">
+              <input type="checkbox" id="chkStratFedsol" checked>
+              <span class="conv-pill pill-fedsol">FedSOL</span>
+            </label>
+          </div>
+
+          <!-- STRIP 2: PER-CLIENT CONVERGENCE CHECKLIST STRIP (ACTIVE IN CLIENTS MODE) -->
+          <div class="convergence-toggles-strip" id="stripClientsToggles" style="display: none;">
             <span class="conv-label">Visibilitas Garis:</span>
             <label class="conv-check conv-global">
               <input type="checkbox" id="chkShowGlobal" checked>

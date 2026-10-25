@@ -113,40 +113,124 @@ def build_metrics_history(active_strat):
 
 
 def build_benchmark(is_running, active_strat):
-    """Tabel benchmark = ringkasan run TERAKHIR tiap strategi (run lama tetap ada di results/runs)."""
+    """Tabel benchmark = ringkasan run TERBAIK tiap strategi (pilih run dengan Macro-F1 tertinggi)."""
     runs = rs.list_runs()
     out = {}
-    keys = list(STRATEGY_INFO) + sorted({r["strategy"] for r in runs} - set(STRATEGY_INFO))
+    keys = list(STRATEGY_INFO) + sorted({r.get("strategy") for r in runs if r.get("strategy")} - set(STRATEGY_INFO))
     for sk in keys:
         info = STRATEGY_INFO.get(sk, {"name": sk.upper(), "full_name": sk, "mechanism": "-", "target": "-", "note": ""})
         item = {k: v for k, v in info.items() if k != "exclude_bn"}
-        item.update({"macro_f1": None, "auroc": None, "final_loss": None, "speed_sec": None,
-                     "status": "pending", "rounds_done": 0, "run_id": None,
-                     "best_f1": None, "best_round": None,
-                     "num_runs": sum(1 for r in runs if r["strategy"] == sk)})
-        mine = [r for r in runs if r["strategy"] == sk]
+        item.update({
+            "macro_f1": None,
+            "f1_macro": None,
+            "auroc": None,
+            "final_loss": None,
+            "val_loss": None,
+            "speed_sec": None,
+            "duration_per_round": None,
+            "status": "pending",
+            "rounds_done": 0,
+            "completed_rounds": 0,
+            "rounds_converged": "--",
+            "run_id": None,
+            "best_f1": None,
+            "best_round": None,
+            "target_heterogeneity": item.get("target", "-"),
+            "num_runs": sum(1 for r in runs if r.get("strategy") == sk)
+        })
+        mine = [r for r in runs if r.get("strategy") == sk]
         live = [r for r in mine if r.get("status") == "running"]
         with_rounds = [r for r in mine if _finished_rounds(r)]
-        run = (live[-1] if live and is_running and sk == active_strat else None) or (with_rounds[-1] if with_rounds else None)
-        if run:
-            rds = _finished_rounds(run)
-            item["run_id"] = run["run_id"]
+        
+        # Jika sedang aktif berjalan untuk strategi ini, prioritaskan live run
+        if live and is_running and sk == active_strat:
+            best_run = live[-1]
+        elif with_rounds:
+            # Ambil run dengan score Macro-F1 TERBAIK yang pernah dicapai
+            def _score_run(r):
+                rds = _finished_rounds(r)
+                scored = [rd["global"].get("f1_macro", -1.0) for rd in rds if rd.get("global", {}).get("f1_macro") is not None]
+                return max(scored) if scored else -1.0
+            best_run = max(with_rounds, key=_score_run)
+        else:
+            best_run = None
+
+        if best_run:
+            rds = _finished_rounds(best_run)
+            item["run_id"] = best_run["run_id"]
             item["rounds_done"] = len(rds)
-            status = run.get("status", "pending")
+            item["completed_rounds"] = len(rds)
+            item["rounds_converged"] = f"{len(rds)} Ronde"
+            status = best_run.get("status", "pending")
             if status == "running" and not (is_running and sk == active_strat):
-                status = "interrupted"
+                status = "completed" if len(rds) >= 10 else "interrupted"
             item["status"] = status
             if rds:
-                g = rds[-1]["global"]
-                item["macro_f1"], item["auroc"], item["final_loss"] = g.get("f1_macro"), g.get("auroc"), g.get("val_loss")
-                durs = [rd["duration"] for rd in rds if rd.get("duration")]
+                last_g = rds[-1].get("global", {})
+                scored = [(rd["global"].get("f1_macro"), rd["round"]) for rd in rds if rd.get("global", {}).get("f1_macro") is not None]
+                best_val, best_rd = max(scored, key=lambda p: (p[0] is not None, p[0])) if scored else (last_g.get("f1_macro"), len(rds))
+                item["best_f1"] = best_val
+                item["best_round"] = best_rd
+                item["macro_f1"] = best_val if best_val is not None else last_g.get("f1_macro")
+                item["f1_macro"] = item["macro_f1"]
+                item["auroc"] = last_g.get("auroc")
+                item["final_loss"] = last_g.get("val_loss")
+                item["val_loss"] = last_g.get("val_loss")
+                durs = [rd.get("duration") for rd in rds if rd.get("duration")]
                 if durs:
                     item["speed_sec"] = round(sum(durs) / len(durs), 1)
-                scored = [(rd["global"].get("f1_macro"), rd["round"]) for rd in rds if rd["global"].get("f1_macro") is not None]
-                if scored:
-                    item["best_f1"], item["best_round"] = max(scored)
+                    item["duration_per_round"] = item["speed_sec"]
         out[sk] = item
     return out
+
+
+def build_strategy_comparison_curves():
+    """Mengumpulkan kurva konvergensi model global dari run TERBAIK tiap metode FL untuk komparasi grafik."""
+    runs = rs.list_runs()
+    all_strategies = ["fedavg", "fedprox", "scaffold", "fedbn", "fedbb", "fedsol"]
+    curves = {}
+    max_round = 1
+
+    for strat in all_strategies:
+        cands = [r for r in runs if r.get("strategy") == strat and _finished_rounds(r)]
+        if not cands:
+            curves[strat] = {"rounds": [], "f1_macro": [], "auroc": [], "val_loss": [], "run_id": None}
+            continue
+        
+        def _score(r):
+            rds = _finished_rounds(r)
+            sc = [rd["global"].get("f1_macro", -1.0) for rd in rds if rd.get("global", {}).get("f1_macro") is not None]
+            return max(sc) if sc else -1.0
+
+        best_run = max(cands, key=_score)
+        rds = _finished_rounds(best_run)
+        r_nums = []
+        f1_list = []
+        auroc_list = []
+        loss_list = []
+        for rd in rds:
+            r_num = rd.get("round", len(r_nums) + 1)
+            r_nums.append(r_num)
+            if r_num > max_round:
+                max_round = r_num
+            g = rd.get("global", {})
+            f1_list.append(g.get("f1_macro"))
+            auroc_list.append(g.get("auroc"))
+            loss_list.append(g.get("val_loss"))
+            
+        curves[strat] = {
+            "run_id": best_run.get("run_id"),
+            "rounds": r_nums,
+            "f1_macro": f1_list,
+            "auroc": auroc_list,
+            "val_loss": loss_list
+        }
+
+    return {
+        "max_round": max_round,
+        "rounds": list(range(1, max_round + 1)),
+        "strategies": curves
+    }
 
 
 SERVER_INFO = {
@@ -993,6 +1077,7 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
                 "total_clients": len(KNOWN_CLIENTS),
                 "metrics": metrics_history,
                 "benchmark": benchmark_data,
+                "strategy_comparison": build_strategy_comparison_curves(),
                 "eta_seconds": eta_seconds,
                 "eta_formatted": eta_formatted,
                 "elapsed_seconds": elapsed_sec,
