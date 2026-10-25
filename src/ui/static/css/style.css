@@ -111,7 +111,7 @@ body {
 .app-header {
   background: var(--bg-card);
   border-bottom: 1px solid var(--border-color);
-  padding: 0.55rem 1.25rem;
+  padding: 0.65rem 2.5rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -271,7 +271,7 @@ body.theme-light .theme-icon-sun { display: inline-block; }
 .main-layout {
   max-width: 1560px;
   margin: 0 auto;
-  padding: 1rem 1.25rem 2rem 1.25rem;
+  padding: 1.25rem 2.5rem 2.5rem 2.5rem;
   display: flex;
   flex-direction: column;
   gap: 1.15rem;
@@ -1457,7 +1457,7 @@ body.theme-light .theme-icon-sun { display: inline-block; }
 
 .drawer-header {
   height: 38px;
-  padding: 0 1rem;
+  padding: 0 2.5rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1544,7 +1544,7 @@ body.theme-light .theme-icon-sun { display: inline-block; }
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  padding: 0.65rem 1rem;
+  padding: 0.65rem 2.5rem;
 }
 
 /* Terminal Tooling */
@@ -1794,4 +1794,43 @@ body.theme-light .theme-icon-sun { display: inline-block; }
 @keyframes modalScale {
   from { transform: scale(0.96); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
+}
+
+/* Responsive Horizontal Padding */
+@media (min-width: 1440px) {
+  .app-header {
+    padding-left: 3.5rem;
+    padding-right: 3.5rem;
+  }
+  .main-layout {
+    padding-left: 3.5rem;
+    padding-right: 3.5rem;
+  }
+  .drawer-header {
+    padding-left: 3.5rem;
+    padding-right: 3.5rem;
+  }
+  .drawer-tab-content {
+    padding-left: 3.5rem;
+    padding-right: 3.5rem;
+  }
+}
+
+@media (max-width: 900px) {
+  .app-header {
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
+  }
+  .main-layout {
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
+  }
+  .drawer-header {
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
+  }
+  .drawer-tab-content {
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
+  }
 }
