@@ -18,6 +18,7 @@ const state = {
   isDrawerFullscreen: false,
   chartInstance: null,
   datasetChartInstance: null,
+  historicalRuns: [],
   inspectedRun: null,
   cachedStatusData: null,
   cachedTopologyData: null,
@@ -720,50 +721,193 @@ async function fetchHistoricalRuns() {
   try {
     const res = await fetch('/api/runs');
     if (!res.ok) return;
-    const runs = await res.json();
-    renderHistoryTable(runs);
+    const data = await res.json();
+    const runs = Array.isArray(data) ? data : (data.runs || []);
+    state.historicalRuns = runs;
+    populateRunSelector();
+    renderHistoryTable();
   } catch (err) {
     console.error('Error fetching history:', err);
   }
 }
 
-function renderHistoryTable(runs) {
+function populateRunSelector() {
+  const sel = document.getElementById('chartRunSelector');
+  if (!sel) return;
+  const currentVal = sel.value;
+  let html = '<option value="latest">⚡ Sesi Terakhir (Live / Default)</option>';
+
+  (state.historicalRuns || []).forEach(r => {
+    const strat = (r.strategy || '').toUpperCase();
+    const started = r.started_at ? new Date(r.started_at * 1000).toLocaleString('id-ID', {
+      day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+    }) : '';
+    const f1 = (r.best_f1 != null) ? `F1: ${Number(r.best_f1).toFixed(3)}` : '';
+    const rCount = `${r.rounds_done ?? (r.rounds ? r.rounds.length : 0)}R`;
+    const label = `${r.run_id} [${strat}] ${started ? `(${started})` : ''} • ${rCount} ${f1 ? `— ${f1}` : ''}`;
+    html += `<option value="${r.run_id}">${label}</option>`;
+  });
+
+  sel.innerHTML = html;
+  if (state.inspectedRun) {
+    sel.value = state.inspectedRun.run_id;
+  } else {
+    sel.value = currentVal || 'latest';
+  }
+}
+
+function renderHistoryTable() {
   const tbody = document.getElementById('historyTableBody');
   if (!tbody) return;
 
-  if (!runs || !runs.length) {
-    tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted" style="padding: 1.5rem;">Belum ada riwayat eksperimen tersimpan.</td></tr>`;
+  const stratFilter = document.getElementById('filterHistoryStrategy')?.value || 'all';
+  const statusFilter = document.getElementById('filterHistoryStatus')?.value || 'all';
+
+  let list = state.historicalRuns || [];
+  if (stratFilter !== 'all') {
+    list = list.filter(r => (r.strategy || '').toLowerCase() === stratFilter.toLowerCase());
+  }
+  if (statusFilter !== 'all') {
+    list = list.filter(r => (r.status || '').toLowerCase() === statusFilter.toLowerCase());
+  }
+
+  if (!list.length) {
+    tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted" style="padding: 1.5rem;">Tidak ada riwayat eksperimen yang sesuai kriteria.</td></tr>`;
     return;
   }
 
-  tbody.innerHTML = runs.map(r => {
-    const rds = r.rounds || [];
-    const rCount = rds.length;
+  tbody.innerHTML = list.map(r => {
+    const rCount = r.rounds_done ?? (r.rounds ? r.rounds.length : 0);
+    const totalRounds = r.config?.num_rounds || 50;
     const bestF1 = r.best_f1 != null ? Number(r.best_f1).toFixed(4) : '--';
-    const finalLoss = rds.length && rds[rds.length - 1].global?.val_loss != null
-      ? Number(rds[rds.length - 1].global.val_loss).toFixed(4) : '--';
+    const finalLoss = r.final_loss != null ? Number(r.final_loss).toFixed(4) : '--';
     const auroc = r.final_auroc != null ? Number(r.final_auroc).toFixed(4) : '--';
     const stClass = r.status === 'completed' ? 'online' : (r.status === 'running' ? 'training' : 'offline');
+    const started = r.started_at ? new Date(r.started_at * 1000).toLocaleString('id-ID') : '--';
 
     return `
       <tr>
         <td class="mono font-semibold">${r.run_id}</td>
-        <td>${r.start_time ? new Date(r.start_time * 1000).toLocaleString('id-ID') : '--'}</td>
+        <td>${started}</td>
         <td><strong class="text-primary">${(r.strategy || '').toUpperCase()}</strong></td>
-        <td class="mono">${rCount} / ${r.config?.num_rounds || '--'}</td>
+        <td class="mono">${rCount} / ${totalRounds}</td>
         <td><span class="badge-status ${stClass}">${r.status}</span></td>
         <td class="mono font-bold" style="color: #3b82f6;">${bestF1}</td>
         <td class="mono">${finalLoss}</td>
         <td class="mono">${auroc}</td>
         <td>
-          <div style="display: flex; gap: 0.35rem;">
-            <a class="btn btn-secondary btn-xs" href="/api/download-model?run_id=${r.run_id}" title="Unduh Model Checkpoint (best.pt)">best.pt</a>
-            <a class="btn btn-secondary btn-xs" href="/api/run?run_id=${r.run_id}" target="_blank" title="Unduh Log Metrik JSON">metrics.json</a>
+          <div style="display: flex; gap: 0.35rem; align-items: center;">
+            <button type="button" class="btn btn-secondary btn-xs btn-inspect-run" data-runid="${r.run_id}" title="Inspeksi grafik konvergensi run ini">🔍 Kurva</button>
+            <a class="btn btn-secondary btn-xs" href="/api/download-model?run=${r.run_id}&tag=best" title="Unduh Model Checkpoint (best.pt)">best.pt</a>
+            <a class="btn btn-secondary btn-xs" href="/api/download-metrics?run=${r.run_id}" target="_blank" title="Unduh Log Metrik JSON">metrics.json</a>
           </div>
         </td>
       </tr>
     `;
   }).join('');
+
+  // Attach event listeners to all inspect buttons in table
+  tbody.querySelectorAll('.btn-inspect-run').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const runId = e.currentTarget.dataset.runid;
+      if (runId) inspectHistoricalRun(runId);
+    });
+  });
+}
+
+function convertRunToMetricsData(run) {
+  const rounds = [];
+  const global = { f1_macro: [], auroc: [], val_loss: [] };
+  const ptbxl = { f1_macro: [], auroc: [], val_loss: [] };
+  const chapman = { f1_macro: [], auroc: [], val_loss: [] };
+  const g12ec = { f1_macro: [], auroc: [], val_loss: [] };
+
+  (run.rounds || []).forEach(rd => {
+    rounds.push(rd.round);
+    const g = rd.global || {};
+    global.f1_macro.push(g.f1_macro ?? null);
+    global.auroc.push(g.auroc ?? null);
+    global.val_loss.push(g.val_loss ?? null);
+
+    const c = rd.clients || {};
+    if (c.ptbxl) {
+      ptbxl.f1_macro.push(c.ptbxl.f1_macro ?? null);
+      ptbxl.auroc.push(c.ptbxl.auroc ?? null);
+      ptbxl.val_loss.push(c.ptbxl.val_loss ?? null);
+    }
+    if (c.chapman) {
+      chapman.f1_macro.push(c.chapman.f1_macro ?? null);
+      chapman.auroc.push(c.chapman.auroc ?? null);
+      chapman.val_loss.push(c.chapman.val_loss ?? null);
+    }
+    if (c.g12ec) {
+      g12ec.f1_macro.push(c.g12ec.f1_macro ?? null);
+      g12ec.auroc.push(c.g12ec.auroc ?? null);
+      g12ec.val_loss.push(c.g12ec.val_loss ?? null);
+    }
+  });
+
+  return {
+    rounds,
+    f1_macro: global.f1_macro,
+    auroc: global.auroc,
+    val_loss: global.val_loss,
+    ptbxl,
+    chapman,
+    g12ec
+  };
+}
+
+async function inspectHistoricalRun(runId) {
+  if (runId === 'latest') {
+    exitInspect();
+    return;
+  }
+  try {
+    const res = await fetch(`/api/runs/${runId}`);
+    if (!res.ok) return;
+    const runData = await res.json();
+    state.inspectedRun = runData;
+
+    // Sync selector
+    const sel = document.getElementById('chartRunSelector');
+    if (sel) sel.value = runId;
+
+    // Show inspect banner
+    const banner = document.getElementById('inspectBanner');
+    const runIdText = document.getElementById('inspectRunId');
+    const detailsText = document.getElementById('inspectRunDetails');
+    if (banner && runIdText) {
+      runIdText.textContent = runId;
+      if (detailsText) {
+        const strat = (runData.strategy || '').toUpperCase();
+        const rounds = (runData.rounds || []).length;
+        const bestF1 = runData.models?.best?.f1_macro != null ? Number(runData.models.best.f1_macro).toFixed(4) : '-';
+        detailsText.textContent = `• Strategi: ${strat} • ${rounds} Ronde Selesai • Best Macro-F1: ${bestF1}`;
+      }
+      banner.style.display = 'flex';
+    }
+
+    const metricsData = convertRunToMetricsData(runData);
+    updateMetricsChart(metricsData);
+
+    // Scroll smoothly to chart
+    document.getElementById('cardMetricsPlots')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } catch (err) {
+    console.error('Error inspecting run:', err);
+  }
+}
+
+function exitInspect() {
+  state.inspectedRun = null;
+  const banner = document.getElementById('inspectBanner');
+  if (banner) banner.style.display = 'none';
+  const sel = document.getElementById('chartRunSelector');
+  if (sel) sel.value = 'latest';
+
+  if (state.cachedStatusData?.metrics) {
+    updateMetricsChart(state.cachedStatusData.metrics);
+  }
 }
 
 // -------------------------------------------------------------
@@ -967,7 +1111,7 @@ async function fetchStatus() {
     updateRunOverview(data);
     updateNodeExporterUI(data);
 
-    if (data.metrics) {
+    if (!state.inspectedRun && data.metrics) {
       updateMetricsChart(data.metrics);
     }
     if (data.benchmark) {
@@ -1042,13 +1186,27 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.id === 'datasetDetailModal') closeDatasetModal();
   });
 
+  // Chart Run Selector (Pilih Sesi Live atau Arsip Lampau)
+  document.getElementById('chartRunSelector')?.addEventListener('change', (e) => {
+    if (e.target.value === 'latest') {
+      exitInspect();
+    } else {
+      inspectHistoricalRun(e.target.value);
+    }
+  });
+
+  // Exit Inspect Button
+  document.getElementById('btnExitInspect')?.addEventListener('click', exitInspect);
+
   // Chart Metric Tabs
   document.querySelectorAll('#chartMetricTabs .seg-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       document.querySelectorAll('#chartMetricTabs .seg-btn').forEach(b => b.classList.remove('active'));
       e.target.classList.add('active');
       state.activeMetric = e.target.dataset.metric;
-      if (state.cachedStatusData?.metrics) {
+      if (state.inspectedRun) {
+        updateMetricsChart(convertRunToMetricsData(state.inspectedRun));
+      } else if (state.cachedStatusData?.metrics) {
         updateMetricsChart(state.cachedStatusData.metrics);
       }
     });
@@ -1064,7 +1222,9 @@ document.addEventListener('DOMContentLoaded', () => {
   Object.entries(mapConv).forEach(([chkId, key]) => {
     document.getElementById(chkId)?.addEventListener('change', (e) => {
       state.visibility[key] = e.target.checked;
-      if (state.cachedStatusData?.metrics) {
+      if (state.inspectedRun) {
+        updateMetricsChart(convertRunToMetricsData(state.inspectedRun));
+      } else if (state.cachedStatusData?.metrics) {
         updateMetricsChart(state.cachedStatusData.metrics);
       }
     });
@@ -1074,6 +1234,11 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnRefreshBenchmark')?.addEventListener('click', () => {
     fetchStatus();
   });
+
+  // History Filter Dropdowns & Refresh
+  document.getElementById('filterHistoryStrategy')?.addEventListener('change', renderHistoryTable);
+  document.getElementById('filterHistoryStatus')?.addEventListener('change', renderHistoryTable);
+  document.getElementById('btnRefreshHistory')?.addEventListener('click', fetchHistoricalRuns);
 
   // Bottom Drawer Controls
   document.getElementById('drawerHeaderToggle')?.addEventListener('click', (e) => {
@@ -1117,9 +1282,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnDownloadModel')?.addEventListener('click', () => {
     window.location.href = '/api/download-model?tag=best';
   });
-
-  // History Refresh
-  document.getElementById('btnRefreshHistory')?.addEventListener('click', fetchHistoricalRuns);
 
   // Initialize Chart
   initMetricsChart();

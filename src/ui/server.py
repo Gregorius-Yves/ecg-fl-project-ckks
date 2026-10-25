@@ -1055,9 +1055,9 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
         elif self.path.startswith("/api/download-model"):
             import urllib.parse
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-            tag = q.get("tag", ["best"])[0]
-            run_id = q.get("run", [None])[0]
-            strategy = q.get("strategy", [None])[0]
+            tag = (q.get("tag") or ["best"])[0]
+            run_id = (q.get("run") or q.get("run_id") or [None])[0]
+            strategy = (q.get("strategy") or [None])[0]
             if not run_id:
                 cands = [r for r in rs.list_runs()
                          if (not strategy or r.get("strategy") == strategy) and tag in r.get("models", {})]
@@ -1078,7 +1078,7 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
         elif self.path.startswith("/api/download-metrics"):
             import urllib.parse
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-            run_id = q.get("run", [None])[0]
+            run_id = (q.get("run") or q.get("run_id") or [None])[0]
             if not run_id:
                 runs = rs.list_runs()
                 run_id = runs[-1]["run_id"] if runs else None
