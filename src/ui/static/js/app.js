@@ -757,11 +757,16 @@ function populateRunSelector() {
 }
 
 function renderHistoryTable() {
-  const tbody = document.getElementById('historyTableBody');
-  if (!tbody) return;
+  const tbodyDrawer = document.getElementById('historyTableBody');
+  const tbodyMain = document.getElementById('historyTableBodyMain');
+  if (!tbodyDrawer && !tbodyMain) return;
 
-  const stratFilter = document.getElementById('filterHistoryStrategy')?.value || 'all';
-  const statusFilter = document.getElementById('filterHistoryStatus')?.value || 'all';
+  const stratFilter = (document.getElementById('filterHistoryStrategyMain')?.value
+                    || document.getElementById('filterHistoryStrategy')?.value
+                    || 'all');
+  const statusFilter = (document.getElementById('filterHistoryStatusMain')?.value
+                     || document.getElementById('filterHistoryStatus')?.value
+                     || 'all');
 
   let list = state.historicalRuns || [];
   if (stratFilter !== 'all') {
@@ -771,12 +776,15 @@ function renderHistoryTable() {
     list = list.filter(r => (r.status || '').toLowerCase() === statusFilter.toLowerCase());
   }
 
+  const emptyRow = `<tr><td colspan="9" class="text-center text-muted" style="padding: 1.5rem;">Tidak ada riwayat eksperimen yang sesuai kriteria.</td></tr>`;
+
   if (!list.length) {
-    tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted" style="padding: 1.5rem;">Tidak ada riwayat eksperimen yang sesuai kriteria.</td></tr>`;
+    if (tbodyDrawer) tbodyDrawer.innerHTML = emptyRow;
+    if (tbodyMain) tbodyMain.innerHTML = emptyRow;
     return;
   }
 
-  tbody.innerHTML = list.map(r => {
+  const rowsHtml = list.map(r => {
     const rCount = r.rounds_done ?? (r.rounds ? r.rounds.length : 0);
     const totalRounds = r.config?.num_rounds || 50;
     const bestF1 = r.best_f1 != null ? Number(r.best_f1).toFixed(4) : '--';
@@ -806,8 +814,11 @@ function renderHistoryTable() {
     `;
   }).join('');
 
-  // Attach event listeners to all inspect buttons in table
-  tbody.querySelectorAll('.btn-inspect-run').forEach(btn => {
+  if (tbodyDrawer) tbodyDrawer.innerHTML = rowsHtml;
+  if (tbodyMain) tbodyMain.innerHTML = rowsHtml;
+
+  // Attach event listeners to all inspect buttons in both tables
+  document.querySelectorAll('.btn-inspect-run').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const runId = e.currentTarget.dataset.runid;
       if (runId) inspectHistoricalRun(runId);
@@ -1235,10 +1246,21 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchStatus();
   });
 
-  // History Filter Dropdowns & Refresh
-  document.getElementById('filterHistoryStrategy')?.addEventListener('change', renderHistoryTable);
-  document.getElementById('filterHistoryStatus')?.addEventListener('change', renderHistoryTable);
+  // History Filter Dropdowns & Refresh (Main Card & Drawer)
+  const syncFilter = (srcId, destId) => {
+    document.getElementById(srcId)?.addEventListener('change', (e) => {
+      const dest = document.getElementById(destId);
+      if (dest) dest.value = e.target.value;
+      renderHistoryTable();
+    });
+  };
+  syncFilter('filterHistoryStrategy', 'filterHistoryStrategyMain');
+  syncFilter('filterHistoryStatus', 'filterHistoryStatusMain');
+  syncFilter('filterHistoryStrategyMain', 'filterHistoryStrategy');
+  syncFilter('filterHistoryStatusMain', 'filterHistoryStatus');
+
   document.getElementById('btnRefreshHistory')?.addEventListener('click', fetchHistoricalRuns);
+  document.getElementById('btnRefreshHistoryMain')?.addEventListener('click', fetchHistoricalRuns);
 
   // Bottom Drawer Controls
   document.getElementById('drawerHeaderToggle')?.addEventListener('click', (e) => {

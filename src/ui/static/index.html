@@ -386,225 +386,347 @@
       </div>
 
       <div class="card-body">
-        <!-- 4 NODE CARDS GRID (Pusat Topologi & 3 Klien) -->
-        <div class="exporter-nodes-grid">
+        <div class="topology-hierarchical-container">
 
-          <!-- CARD 1: SERVER ORCHESTRATOR (VM 1) -->
-          <div class="exporter-node-card is-server is-online" id="exporterCardVm1">
-            <div class="node-card-top">
-              <div class="node-badge-role srv-role">CENTRAL ORCHESTRATOR</div>
-              <span class="badge-status online" id="badgeVm1">Standby</span>
-            </div>
-
-            <div class="node-card-main">
-              <div class="node-icon-wrapper server-bg">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+          <!-- TIER 1: CENTRAL SERVER (ATAS) -->
+          <div class="topology-server-zone">
+            <!-- CARD 1: SERVER ORCHESTRATOR (VM 1) -->
+            <div class="exporter-node-card is-server is-online" id="exporterCardVm1">
+              <div class="node-card-top">
+                <div class="node-badge-role srv-role">PUSAT ORKESTRASI & AGREGASI (SERVER)</div>
+                <span class="badge-status online" id="badgeVm1">Standby</span>
               </div>
-              <div>
-                <h3 class="node-host-title">VM 1 — Flower Server</h3>
-                <div class="node-host-ip mono">10.34.100.114 • Container: fl-dashboard</div>
-              </div>
-            </div>
 
-            <div class="node-telemetry-strip" id="timingVm1">
-              Flower gRPC :8080 • Web UI :8501 • Standby
-            </div>
-
-            <!-- Grafana Resource Gauges -->
-            <div class="resource-gauges-container">
-              <!-- RAM Gauge Bar -->
-              <div class="gauge-row">
-                <div class="gauge-labels">
-                  <span class="gauge-name">RAM Terpakai:</span>
-                  <span class="gauge-stat mono" id="serverRamStat">34.5% (2.8 GB / 8.0 GB)</span>
+              <div class="node-card-main">
+                <div class="node-icon-wrapper server-bg">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
                 </div>
-                <div class="gauge-track">
-                  <div class="gauge-fill fill-ram" id="serverRamFill" style="width: 34.5%;"></div>
+                <div>
+                  <h3 class="node-host-title">VM 1 — Central Flower Server</h3>
+                  <div class="node-host-ip mono">10.34.100.114 • Container: fl-dashboard</div>
                 </div>
               </div>
 
-              <!-- CPU / Activity Load -->
-              <div class="gauge-row">
-                <div class="gauge-labels">
-                  <span class="gauge-name">CPU Load:</span>
-                  <span class="gauge-stat mono" id="serverCpuStat">6% Core Load</span>
+              <div class="node-telemetry-strip" id="timingVm1">
+                Flower gRPC :8080 • Web UI :8501 • Standby
+              </div>
+
+              <!-- Grafana Resource Gauges -->
+              <div class="resource-gauges-container">
+                <div class="gauge-row">
+                  <div class="gauge-labels">
+                    <span class="gauge-name">RAM Terpakai:</span>
+                    <span class="gauge-stat mono" id="serverRamStat">34.5% (2.8 GB / 8.0 GB)</span>
+                  </div>
+                  <div class="gauge-track">
+                    <div class="gauge-fill fill-ram" id="serverRamFill" style="width: 34.5%;"></div>
+                  </div>
                 </div>
-                <div class="gauge-track">
-                  <div class="gauge-fill fill-cpu" id="serverCpuFill" style="width: 6%;"></div>
+
+                <div class="gauge-row">
+                  <div class="gauge-labels">
+                    <span class="gauge-name">CPU Load:</span>
+                    <span class="gauge-stat mono" id="serverCpuStat">6% Core Load</span>
+                  </div>
+                  <div class="gauge-track">
+                    <div class="gauge-fill fill-cpu" id="serverCpuFill" style="width: 6%;"></div>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div class="node-card-footer">
-              <div class="footer-meta">
-                <span>Agregasi: <strong>FedAvg/Prox/SCAFFOLD/BN/BB/SOL</strong></span>
-                <span>Mount: <code class="mono">results/</code>, <code class="mono">logs/</code></span>
+              <div class="node-card-footer">
+                <div class="footer-meta">
+                  <span>Agregasi: <strong>FedAvg/Prox/SCAFFOLD/BN/BB/SOL</strong></span>
+                  <span>Mount: <code class="mono">results/</code>, <code class="mono">logs/</code></span>
+                </div>
               </div>
             </div>
           </div>
 
-          <!-- CARD 2: VM 2 (CLIENT 1 - PTB-XL) -->
-          <div class="exporter-node-card is-client is-offline" id="exporterCardVm2">
-            <div class="node-card-top">
-              <div class="node-badge-role client-role">NODE SILO 1 (C1)</div>
-              <span class="badge-status offline" id="badgeVm2">Offline</span>
-            </div>
+          <!-- CONNECTOR HUB: 3 CABANG TITIK-TITIK & PANAH DUA ARAH KE 3 KLIEN -->
+          <div class="topology-connector-hub">
+            <svg class="connector-svg-canvas" viewBox="0 0 960 85" preserveAspectRatio="none">
+              <defs>
+                <marker id="arrowDown" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 1 L 8 5 L 0 9 z" fill="#3b82f6"/>
+                </marker>
+                <marker id="arrowUp" viewBox="0 0 10 10" refX="4" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                  <path d="M 8 1 L 0 5 L 8 9 z" fill="#8b5cf6"/>
+                </marker>
+              </defs>
 
-            <div class="node-card-main">
-              <div class="node-icon-wrapper client-bg">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-              </div>
-              <div>
-                <h3 class="node-host-title">VM 2 — PTB-XL</h3>
-                <div class="node-host-ip mono">10.34.100.122 • 19,532 Sampel</div>
-              </div>
-            </div>
+              <!-- Line 1: Ke Client 1 (VM 2 Kiri) -->
+              <path class="connector-dotted-line" d="M 480 0 C 480 40, 160 30, 160 76" marker-end="url(#arrowDown)"/>
+              <path class="connector-dotted-line reverse-flow" d="M 160 76 C 160 30, 480 40, 480 0"/>
 
-            <div class="node-telemetry-strip" id="timingVm2">
-              Menunggu Sesi Training Dimulai...
-            </div>
+              <!-- Line 2: Ke Client 2 (VM 3 Tengah) -->
+              <path class="connector-dotted-line" d="M 480 0 L 480 76" marker-end="url(#arrowDown)"/>
+              <path class="connector-dotted-line reverse-flow" d="M 480 76 L 480 0"/>
 
-            <!-- Grafana Resource Gauges -->
-            <div class="resource-gauges-container">
-              <div class="gauge-row">
-                <div class="gauge-labels">
-                  <span class="gauge-name">RAM Terpakai:</span>
-                  <span class="gauge-stat mono" id="ramStatVm2">39.0% (3.1 GB / 8.0 GB)</span>
-                </div>
-                <div class="gauge-track">
-                  <div class="gauge-fill fill-ram" id="ramFillVm2" style="width: 39%;"></div>
-                </div>
-              </div>
+              <!-- Line 3: Ke Client 3 (VM 4 Kanan) -->
+              <path class="connector-dotted-line" d="M 480 0 C 480 40, 800 30, 800 76" marker-end="url(#arrowDown)"/>
+              <path class="connector-dotted-line reverse-flow" d="M 800 76 C 800 30, 480 40, 480 0"/>
+            </svg>
 
-              <div class="gauge-row">
-                <div class="gauge-labels">
-                  <span class="gauge-name">CPU Load:</span>
-                  <span class="gauge-stat mono" id="cpuStatVm2">12% Load</span>
-                </div>
-                <div class="gauge-track">
-                  <div class="gauge-fill fill-cpu" id="cpuFillVm2" style="width: 12%;"></div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Non-IID Badge & Expand Button -->
-            <div class="node-card-footer">
-              <span class="non-iid-pill tag-feature">Feature Shift</span>
-              <button type="button" class="btn btn-secondary btn-xs btn-expand-dataset" data-client="vm2">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                Detail 27 Kelas
-              </button>
+            <!-- Floating Informational Badges on the Bus -->
+            <div class="connector-badge-strip">
+              <span class="connector-pill-info pill-aggregation" title="Proses penggabungan bobot model di VM 1">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                Agregasi Global (FedAvg/Prox/SCAFFOLD/BN/BB/SOL)
+              </span>
+              <span class="connector-pill-info" title="Arah transmisi model">
+                <span style="color: #3b82f6;">⬇ Broadcast Bobot ($w_t$)</span>
+                <span style="color: #64748b;">|</span>
+                <span style="color: #8b5cf6;">⬆ Kirim Gradien Lokal ($w_{t+1}^k$)</span>
+              </span>
+              <span class="connector-pill-info pill-privacy" title="Jaminan privasi data medis">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                Zero Raw Data Sharing (Data EKG Tetap di Silo Klien)
+              </span>
             </div>
           </div>
 
-          <!-- CARD 3: VM 3 (CLIENT 2 - CHAPMAN-NINGBO) -->
-          <div class="exporter-node-card is-client is-offline" id="exporterCardVm3">
-            <div class="node-card-top">
-              <div class="node-badge-role client-role">NODE SILO 2 (C2)</div>
-              <span class="badge-status offline" id="badgeVm3">Offline</span>
-            </div>
+          <!-- TIER 2: 3 CLIENTS (BAWAH) -->
+          <div class="topology-clients-zone">
 
-            <div class="node-card-main">
-              <div class="node-icon-wrapper client-bg">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            <!-- CARD 2: VM 2 (CLIENT 1 - PTB-XL) -->
+            <div class="exporter-node-card is-client is-offline" id="exporterCardVm2">
+              <div class="node-card-top">
+                <div class="node-badge-role client-role">NODE SILO 1 (CLIENT 1)</div>
+                <span class="badge-status offline" id="badgeVm2">Offline</span>
               </div>
-              <div>
-                <h3 class="node-host-title">VM 3 — Chapman-Ningbo</h3>
-                <div class="node-host-ip mono">10.34.100.123 • 44,180 Sampel</div>
-              </div>
-            </div>
 
-            <div class="node-telemetry-strip" id="timingVm3">
-              Menunggu Sesi Training Dimulai...
-            </div>
-
-            <!-- Grafana Resource Gauges -->
-            <div class="resource-gauges-container">
-              <div class="gauge-row">
-                <div class="gauge-labels">
-                  <span class="gauge-name">RAM Terpakai:</span>
-                  <span class="gauge-stat mono" id="ramStatVm3">44.0% (3.5 GB / 8.0 GB)</span>
+              <div class="node-card-main">
+                <div class="node-icon-wrapper client-bg">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
                 </div>
-                <div class="gauge-track">
-                  <div class="gauge-fill fill-ram" id="ramFillVm3" style="width: 44%;"></div>
+                <div>
+                  <h3 class="node-host-title">VM 2 — PTB-XL</h3>
+                  <div class="node-host-ip mono">10.34.100.122 • 19,532 Sampel</div>
                 </div>
               </div>
 
-              <div class="gauge-row">
-                <div class="gauge-labels">
-                  <span class="gauge-name">CPU Load:</span>
-                  <span class="gauge-stat mono" id="cpuStatVm3">14% Load</span>
+              <div class="node-telemetry-strip" id="timingVm2">
+                Menunggu Sesi Training Dimulai...
+              </div>
+
+              <!-- Grafana Resource Gauges -->
+              <div class="resource-gauges-container">
+                <div class="gauge-row">
+                  <div class="gauge-labels">
+                    <span class="gauge-name">RAM Terpakai:</span>
+                    <span class="gauge-stat mono" id="ramStatVm2">39.0% (3.1 GB / 8.0 GB)</span>
+                  </div>
+                  <div class="gauge-track">
+                    <div class="gauge-fill fill-ram" id="ramFillVm2" style="width: 39%;"></div>
+                  </div>
                 </div>
-                <div class="gauge-track">
-                  <div class="gauge-fill fill-cpu" id="cpuFillVm3" style="width: 14%;"></div>
+
+                <div class="gauge-row">
+                  <div class="gauge-labels">
+                    <span class="gauge-name">CPU Load:</span>
+                    <span class="gauge-stat mono" id="cpuStatVm2">12% Load</span>
+                  </div>
+                  <div class="gauge-track">
+                    <div class="gauge-fill fill-cpu" id="cpuFillVm2" style="width: 12%;"></div>
+                  </div>
                 </div>
+              </div>
+
+              <!-- Non-IID Badge & Expand Button -->
+              <div class="node-card-footer">
+                <span class="non-iid-pill tag-feature">Feature Shift</span>
+                <button type="button" class="btn btn-secondary btn-xs btn-expand-dataset" data-client="vm2">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  Detail 27 Kelas
+                </button>
               </div>
             </div>
 
-            <!-- Non-IID Badge & Expand Button -->
-            <div class="node-card-footer">
-              <span class="non-iid-pill tag-label">Label Skew</span>
-              <button type="button" class="btn btn-secondary btn-xs btn-expand-dataset" data-client="vm3">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                Detail 27 Kelas
-              </button>
+            <!-- CARD 3: VM 3 (CLIENT 2 - CHAPMAN-NINGBO) -->
+            <div class="exporter-node-card is-client is-offline" id="exporterCardVm3">
+              <div class="node-card-top">
+                <div class="node-badge-role client-role">NODE SILO 2 (CLIENT 2)</div>
+                <span class="badge-status offline" id="badgeVm3">Offline</span>
+              </div>
+
+              <div class="node-card-main">
+                <div class="node-icon-wrapper client-bg">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                </div>
+                <div>
+                  <h3 class="node-host-title">VM 3 — Chapman-Ningbo</h3>
+                  <div class="node-host-ip mono">10.34.100.123 • 44,180 Sampel</div>
+                </div>
+              </div>
+
+              <div class="node-telemetry-strip" id="timingVm3">
+                Menunggu Sesi Training Dimulai...
+              </div>
+
+              <!-- Grafana Resource Gauges -->
+              <div class="resource-gauges-container">
+                <div class="gauge-row">
+                  <div class="gauge-labels">
+                    <span class="gauge-name">RAM Terpakai:</span>
+                    <span class="gauge-stat mono" id="ramStatVm3">44.0% (3.5 GB / 8.0 GB)</span>
+                  </div>
+                  <div class="gauge-track">
+                    <div class="gauge-fill fill-ram" id="ramFillVm3" style="width: 44%;"></div>
+                  </div>
+                </div>
+
+                <div class="gauge-row">
+                  <div class="gauge-labels">
+                    <span class="gauge-name">CPU Load:</span>
+                    <span class="gauge-stat mono" id="cpuStatVm3">14% Load</span>
+                  </div>
+                  <div class="gauge-track">
+                    <div class="gauge-fill fill-cpu" id="cpuFillVm3" style="width: 14%;"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Non-IID Badge & Expand Button -->
+              <div class="node-card-footer">
+                <span class="non-iid-pill tag-label">Label Skew</span>
+                <button type="button" class="btn btn-secondary btn-xs btn-expand-dataset" data-client="vm3">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  Detail 27 Kelas
+                </button>
+              </div>
             </div>
+
+            <!-- CARD 4: VM 4 (CLIENT 3 - G12EC) -->
+            <div class="exporter-node-card is-client is-offline" id="exporterCardVm4">
+              <div class="node-card-top">
+                <div class="node-badge-role client-role">NODE SILO 3 (CLIENT 3)</div>
+                <span class="badge-status offline" id="badgeVm4">Offline</span>
+              </div>
+
+              <div class="node-card-main">
+                <div class="node-icon-wrapper client-bg">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                </div>
+                <div>
+                  <h3 class="node-host-title">VM 4 — G12EC (CinC 2020)</h3>
+                  <div class="node-host-ip mono">10.34.100.125 • 9,355 Sampel</div>
+                </div>
+              </div>
+
+              <div class="node-telemetry-strip" id="timingVm4">
+                Menunggu Sesi Training Dimulai...
+              </div>
+
+              <!-- Grafana Resource Gauges -->
+              <div class="resource-gauges-container">
+                <div class="gauge-row">
+                  <div class="gauge-labels">
+                    <span class="gauge-name">RAM Terpakai:</span>
+                    <span class="gauge-stat mono" id="ramStatVm4">33.6% (2.7 GB / 8.0 GB)</span>
+                  </div>
+                  <div class="gauge-track">
+                    <div class="gauge-fill fill-ram" id="ramFillVm4" style="width: 33.6%;"></div>
+                  </div>
+                </div>
+
+                <div class="gauge-row">
+                  <div class="gauge-labels">
+                    <span class="gauge-name">CPU Load:</span>
+                    <span class="gauge-stat mono" id="cpuStatVm4">10% Load</span>
+                  </div>
+                  <div class="gauge-track">
+                    <div class="gauge-fill fill-cpu" id="cpuFillVm4" style="width: 10%;"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Non-IID Badge & Expand Button -->
+              <div class="node-card-footer">
+                <span class="non-iid-pill tag-duration">Duration Skew</span>
+                <button type="button" class="btn btn-secondary btn-xs btn-expand-dataset" data-client="vm4">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  Detail 27 Kelas
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- PANDUAN KONSEPTUAL & INFORMASI EKSPERIMEN (UNTUK ORANG AWAM) -->
+        <div class="explainer-wrapper">
+          <div class="explainer-header">
+            <div class="explainer-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              Panduan Konsep & Alur Eksperimen (Edukasi Federated Learning)
+            </div>
+            <span class="badge-status online" style="font-size: 0.65rem;">Modul Informasi Publik</span>
           </div>
 
-          <!-- CARD 4: VM 4 (CLIENT 3 - G12EC) -->
-          <div class="exporter-node-card is-client is-offline" id="exporterCardVm4">
-            <div class="node-card-top">
-              <div class="node-badge-role client-role">NODE SILO 3 (C3)</div>
-              <span class="badge-status offline" id="badgeVm4">Offline</span>
-            </div>
-
-            <div class="node-card-main">
-              <div class="node-icon-wrapper client-bg">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          <div class="explainer-grid">
+            <!-- Kartu 1: Apa itu FL -->
+            <div class="explainer-card">
+              <div class="explainer-card-title">
+                <span class="explainer-badge-num">1</span>
+                <span>Apa itu Federated Learning?</span>
               </div>
-              <div>
-                <h3 class="node-host-title">VM 4 — G12EC (CinC 2020)</h3>
-                <div class="node-host-ip mono">10.34.100.125 • 9,355 Sampel</div>
-              </div>
-            </div>
-
-            <div class="node-telemetry-strip" id="timingVm4">
-              Menunggu Sesi Training Dimulai...
-            </div>
-
-            <!-- Grafana Resource Gauges -->
-            <div class="resource-gauges-container">
-              <div class="gauge-row">
-                <div class="gauge-labels">
-                  <span class="gauge-name">RAM Terpakai:</span>
-                  <span class="gauge-stat mono" id="ramStatVm4">33.6% (2.7 GB / 8.0 GB)</span>
-                </div>
-                <div class="gauge-track">
-                  <div class="gauge-fill fill-ram" id="ramFillVm4" style="width: 33.6%;"></div>
-                </div>
-              </div>
-
-              <div class="gauge-row">
-                <div class="gauge-labels">
-                  <span class="gauge-name">CPU Load:</span>
-                  <span class="gauge-stat mono" id="cpuStatVm4">10% Load</span>
-                </div>
-                <div class="gauge-track">
-                  <div class="gauge-fill fill-cpu" id="cpuFillVm4" style="width: 10%;"></div>
+              <div class="explainer-card-body">
+                Metode kecerdasan buatan (AI) kolaboratif di mana <strong>beberapa rumah sakit melatih model secara bersama tanpa pernah bertukar rekam medis pasien</strong>. Yang dikirim bolak-balik hanyalah formula matematika (bobot model AI), sehingga privasi pasien terlindungi 100%.
+                <div class="explainer-analogy-box">
+                  💡 <strong>Analogi:</strong> 3 dokter menulis buku panduan diagnosis bersama hanya dengan berbagi ringkasan ilmu, tanpa membawa berkas rekam medis pasien keluar dari rumah sakit masing-masing.
                 </div>
               </div>
             </div>
 
-            <!-- Non-IID Badge & Expand Button -->
-            <div class="node-card-footer">
-              <span class="non-iid-pill tag-duration">Duration Skew</span>
-              <button type="button" class="btn btn-secondary btn-xs btn-expand-dataset" data-client="vm4">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                Detail 27 Kelas
-              </button>
+            <!-- Kartu 2: Apa Guna Run Ini -->
+            <div class="explainer-card">
+              <div class="explainer-card-title">
+                <span class="explainer-badge-num">2</span>
+                <span>Apa Guna Dashboard / Run Ini?</span>
+              </div>
+              <div class="explainer-card-body">
+                Sebagai <strong>Pusat Komando (Mission Control)</strong> otomatis yang mengorkestrasi pelatihan AI di 4 Virtual Machine nyata. Sistem mengatur jadwal ronde, mendistribusikan bobot via protokol Flower gRPC, memantau penggunaan RAM & CPU live, serta menyimpan model checkpoint terbaik (<code>best.pt</code>).
+                <div class="explainer-analogy-box">
+                  🎯 <strong>Fungsi:</strong> Menguji coba metode pembelajaran mesin secara otomatis, aman, dan dapat diulang kembali (reproducible).
+                </div>
+              </div>
             </div>
+
+            <!-- Kartu 3: Apa Eksperimen yang Sedang Diuji -->
+            <div class="explainer-card">
+              <div class="explainer-card-title">
+                <span class="explainer-badge-num">3</span>
+                <span>Apa Eksperimen yang Sedang Diuji?</span>
+              </div>
+              <div class="explainer-card-body">
+                Menguji tolok ukur (<em>benchmark</em>) <strong>6 algoritma FL</strong> (FedAvg, FedProx, SCAFFOLD, FedBN, FedBB, FedSOL) untuk mendeteksi <strong>27 kelainan jantung</strong> pada sinyal 12-lead EKG menghadapi 3 tantangan dunia nyata (<em>Non-IID</em>):
+                <ul style="margin: 0.25rem 0 0 1rem; padding: 0;">
+                  <li><strong>Feature Shift</strong>: Beda merk alat & sampling sinyal.</li>
+                  <li><strong>Label Skew</strong>: Sebaran jenis penyakit tidak merata.</li>
+                  <li><strong>Duration Skew</strong>: Durasi rekam sinyal pasien berbeda.</li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Kartu 4: Bagaimana 1 Ronde Berjalan -->
+            <div class="explainer-card">
+              <div class="explainer-card-title">
+                <span class="explainer-badge-num">4</span>
+                <span>Bagaimana 1 Ronde FL Bekerja?</span>
+              </div>
+              <div class="explainer-card-body">
+                Setiap ronde pelatihan berlangsung dalam 4 langkah siklus:
+                <ol style="margin: 0.25rem 0 0 1rem; padding: 0; line-height: 1.4;">
+                  <li><strong>Broadcast:</strong> Server mengirim model global ke 3 klien.</li>
+                  <li><strong>Local Fit:</strong> Klien melatih model dengan data privatnya.</li>
+                  <li><strong>Upload:</strong> Klien mengirim balik update bobot model ke server.</li>
+                  <li><strong>Agregasi:</strong> Server menggabungkan update jadi model baru.</li>
+                </ol>
+              </div>
+            </div>
+
           </div>
-
         </div>
       </div>
     </section>
@@ -728,6 +850,70 @@
       </section>
 
     </div>
+
+    <!-- ==============================================================================
+         ROW 4: RIWAYAT EKSPERIMEN & CHECKPOINT MODEL (RUN LAMPAU - FULL CARD)
+         ============================================================================== -->
+    <section class="card full-width" id="cardHistoricalRunsMain" style="margin-top: 1.25rem;">
+      <div class="card-header">
+        <div>
+          <div class="card-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
+            Riwayat Eksperimen & Checkpoint Model (Run Lampau)
+          </div>
+          <div class="card-subtitle">
+            Seluruh run tersimpan permanen di <code>results/runs/</code> (append-only). Klik <strong>🔍 Kurva</strong> untuk menampilkan grafik konvergensi pada modul di atas.
+          </div>
+        </div>
+        <div class="header-actions-group">
+          <select id="filterHistoryStrategyMain" class="form-select-sm" title="Filter berdasarkan algoritma">
+            <option value="all">Semua Algoritma</option>
+            <option value="fedavg">FedAvg</option>
+            <option value="fedprox">FedProx</option>
+            <option value="scaffold">SCAFFOLD</option>
+            <option value="fedbn">FedBN</option>
+            <option value="fedbb">FedBB</option>
+            <option value="fedsol">FedSOL</option>
+          </select>
+          <select id="filterHistoryStatusMain" class="form-select-sm" title="Filter berdasarkan status run">
+            <option value="all">Semua Status</option>
+            <option value="completed">Completed (Selesai)</option>
+            <option value="running">Running (Berjalan)</option>
+            <option value="interrupted">Interrupted (Dihentikan)</option>
+            <option value="failed">Failed / Error (Gagal)</option>
+          </select>
+          <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshHistoryMain">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            Segarkan Riwayat
+          </button>
+        </div>
+      </div>
+
+      <div class="card-body">
+        <div class="table-responsive" style="max-height: 380px; overflow-y: auto;">
+          <table class="compact-table" id="tableHistoryRunsMain">
+            <thead>
+              <tr>
+                <th>ID Eksperimen</th>
+                <th>Waktu Mulai</th>
+                <th>Algoritma</th>
+                <th>Ronde</th>
+                <th>Status</th>
+                <th>Best Macro-F1</th>
+                <th>Final Loss</th>
+                <th>Final AUROC</th>
+                <th>Unduh / Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="historyTableBodyMain">
+              <tr>
+                <td colspan="9" class="text-center text-muted" style="padding: 1.5rem;">Memuat daftar riwayat eksekusi...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
 
   </main>
 

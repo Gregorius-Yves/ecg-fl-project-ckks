@@ -828,24 +828,223 @@ body.theme-light .theme-icon-sun { display: inline-block; }
 }
 
 /* ==============================================================================
-   3. TOPOLOGI JARINGAN & METRIK NODE KLIEN (ROW 2 - MINI GRAFANA)
+   3. TOPOLOGI JARINGAN & METRIK NODE KLIEN (ROW 2 - HIERARKIS & KONEKTOR)
    ============================================================================== */
-.exporter-nodes-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 0.85rem;
+.topology-hierarchical-container {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  gap: 0;
 }
 
-@media (max-width: 1200px) {
-  .exporter-nodes-grid {
+.topology-server-zone {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.topology-server-zone .exporter-node-card {
+  width: 100%;
+  max-width: 580px;
+}
+
+/* Connector Hub with Animated Dotted Lines & Arrows */
+.topology-connector-hub {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.5rem 0 0.85rem 0;
+}
+
+.connector-svg-canvas {
+  width: 100%;
+  max-width: 960px;
+  height: 90px;
+  overflow: visible;
+  display: block;
+}
+
+.connector-dotted-line {
+  stroke: var(--color-primary);
+  stroke-width: 2.2;
+  stroke-dasharray: 6 5;
+  animation: flowDottedLine 1.6s linear infinite;
+  fill: none;
+}
+
+.connector-dotted-line.reverse-flow {
+  animation: flowDottedLineRev 1.6s linear infinite;
+  stroke: #8b5cf6;
+}
+
+@keyframes flowDottedLine {
+  from { stroke-dashoffset: 22; }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes flowDottedLineRev {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: 22; }
+}
+
+.connector-badge-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: -16px;
+  z-index: 2;
+}
+
+.connector-pill-info {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-pill);
+  padding: 0.28rem 0.75rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-main);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+}
+
+.connector-pill-info.pill-aggregation {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.12), rgba(139, 92, 246, 0.12));
+  border-color: rgba(59, 130, 246, 0.35);
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+.connector-pill-info.pill-privacy {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #10b981;
+}
+
+.topology-clients-zone {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.85rem;
+  width: 100%;
+}
+
+@media (max-width: 960px) {
+  .topology-clients-zone {
+    grid-template-columns: 1fr;
+  }
+  .connector-svg-canvas {
+    display: none;
+  }
+  .connector-badge-strip {
+    margin-top: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+}
+
+/* Explainer Section (Untuk Orang Awam) */
+.explainer-wrapper {
+  margin-top: 1.25rem;
+  border-top: 1px solid var(--border-color);
+  padding-top: 1.1rem;
+}
+
+.explainer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.85rem;
+}
+
+.explainer-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--text-main);
+}
+
+.explainer-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+}
+
+@media (max-width: 1100px) {
+  .explainer-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 }
 
-@media (max-width: 640px) {
-  .exporter-nodes-grid {
+@media (max-width: 600px) {
+  .explainer-grid {
     grid-template-columns: 1fr;
   }
+}
+
+.explainer-card {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.explainer-card:hover {
+  border-color: var(--color-primary);
+  transform: translateY(-2px);
+}
+
+.explainer-card-title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.explainer-badge-num {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.explainer-card-body {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.explainer-card-body strong {
+  color: var(--text-main);
+}
+
+.explainer-analogy-box {
+  margin-top: 0.35rem;
+  padding: 0.35rem 0.5rem;
+  background: var(--bg-card);
+  border-left: 3px solid var(--color-primary);
+  border-radius: var(--radius-xs);
+  font-size: 0.65rem;
+  font-style: italic;
+  color: var(--text-sub);
 }
 
 .exporter-node-card {
