@@ -947,6 +947,13 @@ body.theme-light .theme-icon-sun { display: inline-block; }
 }
 
 /* Explainer Section (Untuk Orang Awam) */
+.panel-explainer-top {
+  margin-bottom: 1.15rem;
+  background: linear-gradient(180deg, var(--bg-card) 0%, rgba(20, 24, 33, 0.65) 100%);
+  border: 1px solid rgba(41, 151, 255, 0.25);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12);
+}
+
 .explainer-wrapper {
   margin-top: 1.25rem;
   border-top: 1px solid var(--border-color);

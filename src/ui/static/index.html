@@ -79,6 +79,90 @@
   <main class="main-layout" id="mainContainer">
 
     <!-- ==============================================================================
+         1. PANDUAN KONSEPTUAL & INFORMASI EKSPERIMEN (EDUKASI FEDERATED LEARNING)
+         ============================================================================== -->
+    <section class="card full-width panel-explainer-top" id="sectionExplainerGuide">
+      <div class="card-header" style="padding-bottom: 0.6rem;">
+        <div>
+          <div class="card-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Panduan Konsep & Alur Eksperimen (Edukasi Federated Learning)
+          </div>
+          <div class="card-subtitle">Pengenalan sistem desentralisasi privasi medis, perbandingan model, dan siklus pembelajaran FL untuk publik & penguji</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span class="badge-status online" style="font-size: 0.68rem; font-weight: 700;">Modul Informasi Publik</span>
+        </div>
+      </div>
+
+      <div class="card-body" style="padding-top: 0.25rem;">
+        <div class="explainer-grid">
+          <!-- Kartu 1: Apa itu FL -->
+          <div class="explainer-card">
+            <div class="explainer-card-title">
+              <span class="explainer-badge-num">1</span>
+              <span>Apa itu Federated Learning?</span>
+            </div>
+            <div class="explainer-card-body">
+              Metode kecerdasan buatan (AI) kolaboratif di mana <strong>beberapa rumah sakit melatih model secara bersama tanpa pernah bertukar rekam medis pasien</strong>. Yang dikirim bolak-balik hanyalah formula matematika (bobot model AI), sehingga privasi pasien terlindungi 100%.
+              <div class="explainer-analogy-box">
+                💡 <strong>Analogi:</strong> 3 dokter menulis buku panduan diagnosis bersama hanya dengan berbagi ringkasan ilmu, tanpa membawa berkas rekam medis pasien keluar dari rumah sakit masing-masing.
+              </div>
+            </div>
+          </div>
+
+          <!-- Kartu 2: Apa Guna Run Ini -->
+          <div class="explainer-card">
+            <div class="explainer-card-title">
+              <span class="explainer-badge-num">2</span>
+              <span>Apa Guna Dashboard / Run Ini?</span>
+            </div>
+            <div class="explainer-card-body">
+              Sebagai <strong>Pusat Komando (Mission Control)</strong> otomatis yang mengorkestrasi pelatihan AI di 4 Virtual Machine nyata. Sistem mengatur jadwal ronde, mendistribusikan bobot via protokol Flower gRPC, memantau penggunaan RAM & CPU live, serta menyimpan model checkpoint terbaik (<code>best.pt</code>).
+              <div class="explainer-analogy-box">
+                🎯 <strong>Fungsi:</strong> Menguji coba metode pembelajaran mesin secara otomatis, aman, dan dapat diulang kembali (reproducible).
+              </div>
+            </div>
+          </div>
+
+          <!-- Kartu 3: Apa Eksperimen yang Sedang Diuji -->
+          <div class="explainer-card">
+            <div class="explainer-card-title">
+              <span class="explainer-badge-num">3</span>
+              <span>Apa Eksperimen yang Sedang Diuji?</span>
+            </div>
+            <div class="explainer-card-body">
+              Menguji tolok ukur (<em>benchmark</em>) <strong>6 algoritma FL</strong> (FedAvg, FedProx, SCAFFOLD, FedBN, FedBB, FedSOL) untuk mendeteksi <strong>27 kelainan jantung</strong> pada sinyal 12-lead EKG menghadapi 3 tantangan dunia nyata (<em>Non-IID</em>):
+              <ul style="margin: 0.25rem 0 0 1rem; padding: 0;">
+                <li><strong>Feature Shift</strong>: Beda merk alat & sampling sinyal.</li>
+                <li><strong>Label Skew</strong>: Sebaran jenis penyakit tidak merata.</li>
+                <li><strong>Duration Skew</strong>: Durasi rekam sinyal pasien berbeda.</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Kartu 4: Bagaimana 1 Ronde Berjalan -->
+          <div class="explainer-card">
+            <div class="explainer-card-title">
+              <span class="explainer-badge-num">4</span>
+              <span>Bagaimana 1 Ronde FL Bekerja?</span>
+            </div>
+            <div class="explainer-card-body">
+              Setiap ronde pelatihan berlangsung dalam 4 langkah siklus:
+              <ol style="margin: 0.25rem 0 0 1rem; padding: 0; line-height: 1.4;">
+                <li><strong>Broadcast:</strong> Server mengirim model global ke 3 klien.</li>
+                <li><strong>Local Fit:</strong> Klien melatih model dengan data privatnya.</li>
+                <li><strong>Upload:</strong> Klien mengirim balik update bobot model ke server.</li>
+                <li><strong>Agregasi:</strong> Server menggabungkan update jadi model baru.</li>
+              </ol>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ==============================================================================
          2. PANEL KONTROL & RINGKASAN BERJALAN (ROW 1: 2 KOLOM)
          ============================================================================== -->
     <div class="row-grid-2col" id="row1ControlOverview">
@@ -652,82 +736,6 @@
             </div>
 
           </div>
-        </div>
-
-        <!-- PANDUAN KONSEPTUAL & INFORMASI EKSPERIMEN (UNTUK ORANG AWAM) -->
-        <div class="explainer-wrapper">
-          <div class="explainer-header">
-            <div class="explainer-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              Panduan Konsep & Alur Eksperimen (Edukasi Federated Learning)
-            </div>
-            <span class="badge-status online" style="font-size: 0.65rem;">Modul Informasi Publik</span>
-          </div>
-
-          <div class="explainer-grid">
-            <!-- Kartu 1: Apa itu FL -->
-            <div class="explainer-card">
-              <div class="explainer-card-title">
-                <span class="explainer-badge-num">1</span>
-                <span>Apa itu Federated Learning?</span>
-              </div>
-              <div class="explainer-card-body">
-                Metode kecerdasan buatan (AI) kolaboratif di mana <strong>beberapa rumah sakit melatih model secara bersama tanpa pernah bertukar rekam medis pasien</strong>. Yang dikirim bolak-balik hanyalah formula matematika (bobot model AI), sehingga privasi pasien terlindungi 100%.
-                <div class="explainer-analogy-box">
-                  💡 <strong>Analogi:</strong> 3 dokter menulis buku panduan diagnosis bersama hanya dengan berbagi ringkasan ilmu, tanpa membawa berkas rekam medis pasien keluar dari rumah sakit masing-masing.
-                </div>
-              </div>
-            </div>
-
-            <!-- Kartu 2: Apa Guna Run Ini -->
-            <div class="explainer-card">
-              <div class="explainer-card-title">
-                <span class="explainer-badge-num">2</span>
-                <span>Apa Guna Dashboard / Run Ini?</span>
-              </div>
-              <div class="explainer-card-body">
-                Sebagai <strong>Pusat Komando (Mission Control)</strong> otomatis yang mengorkestrasi pelatihan AI di 4 Virtual Machine nyata. Sistem mengatur jadwal ronde, mendistribusikan bobot via protokol Flower gRPC, memantau penggunaan RAM & CPU live, serta menyimpan model checkpoint terbaik (<code>best.pt</code>).
-                <div class="explainer-analogy-box">
-                  🎯 <strong>Fungsi:</strong> Menguji coba metode pembelajaran mesin secara otomatis, aman, dan dapat diulang kembali (reproducible).
-                </div>
-              </div>
-            </div>
-
-            <!-- Kartu 3: Apa Eksperimen yang Sedang Diuji -->
-            <div class="explainer-card">
-              <div class="explainer-card-title">
-                <span class="explainer-badge-num">3</span>
-                <span>Apa Eksperimen yang Sedang Diuji?</span>
-              </div>
-              <div class="explainer-card-body">
-                Menguji tolok ukur (<em>benchmark</em>) <strong>6 algoritma FL</strong> (FedAvg, FedProx, SCAFFOLD, FedBN, FedBB, FedSOL) untuk mendeteksi <strong>27 kelainan jantung</strong> pada sinyal 12-lead EKG menghadapi 3 tantangan dunia nyata (<em>Non-IID</em>):
-                <ul style="margin: 0.25rem 0 0 1rem; padding: 0;">
-                  <li><strong>Feature Shift</strong>: Beda merk alat & sampling sinyal.</li>
-                  <li><strong>Label Skew</strong>: Sebaran jenis penyakit tidak merata.</li>
-                  <li><strong>Duration Skew</strong>: Durasi rekam sinyal pasien berbeda.</li>
-                </ul>
-              </div>
-            </div>
-
-            <!-- Kartu 4: Bagaimana 1 Ronde Berjalan -->
-            <div class="explainer-card">
-              <div class="explainer-card-title">
-                <span class="explainer-badge-num">4</span>
-                <span>Bagaimana 1 Ronde FL Bekerja?</span>
-              </div>
-              <div class="explainer-card-body">
-                Setiap ronde pelatihan berlangsung dalam 4 langkah siklus:
-                <ol style="margin: 0.25rem 0 0 1rem; padding: 0; line-height: 1.4;">
-                  <li><strong>Broadcast:</strong> Server mengirim model global ke 3 klien.</li>
-                  <li><strong>Local Fit:</strong> Klien melatih model dengan data privatnya.</li>
-                  <li><strong>Upload:</strong> Klien mengirim balik update bobot model ke server.</li>
-                  <li><strong>Agregasi:</strong> Server menggabungkan update jadi model baru.</li>
-                </ol>
-              </div>
-            </div>
-
-          </div>
-        </div>
       </div>
     </section>
 
