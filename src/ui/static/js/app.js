@@ -13,6 +13,8 @@ const state = {
   activeStrategy: 'fedbn',
   activeMetric: 'f1',
   chartViewMode: 'comparison', // 'comparison' or 'clients'
+  chartAutoRefresh: true,
+  chartInitializedOnce: false,
   activeLogSource: 'server',
   activeDrawerTab: 'logs',
   isDrawerExpanded: false,
@@ -27,20 +29,27 @@ const state = {
   logsTimer: null,
   clockTimer: null,
   serverTimeOffset: 0,
-  visibility: {
-    global: true,
-    vm2: true,
-    vm3: true,
-    vm4: true
-  },
-  stratVisibility: {
-    fedavg: true,
-    fedprox: true,
-    scaffold: true,
-    fedbn: true,
-    fedbb: true,
-    fedsol: true
-  }
+  visibility: (() => {
+    try {
+      const v = localStorage.getItem('ecg_fl_client_vis');
+      if (v) return JSON.parse(v);
+    } catch(e) {}
+    return { global: true, vm2: true, vm3: true, vm4: true };
+  })(),
+  stratVisibility: (() => {
+    try {
+      const v = localStorage.getItem('ecg_fl_strat_vis');
+      if (v) return JSON.parse(v);
+    } catch(e) {}
+    return {
+      fedavg: true,
+      fedprox: true,
+      scaffold: true,
+      fedbn: true,
+      fedbb: true,
+      fedsol: true
+    };
+  })()
 };
 
 // -------------------------------------------------------------
@@ -579,6 +588,52 @@ function initMetricsChart() {
             boxWidth: 12,
             font: { family: "'Inter', sans-serif", size: 11 },
             color: colors.textColor
+          },
+          onClick: (e, legendItem, legend) => {
+            const index = legendItem.datasetIndex;
+            const ci = legend.chart;
+            const meta = ci.getDatasetMeta(index);
+            const isHidden = meta.hidden === null ? !ci.data.datasets[index].hidden : !meta.hidden;
+            meta.hidden = isHidden;
+            ci.update();
+
+            // Sync with strategy checklist if in comparison mode
+            if (state.chartViewMode === 'comparison') {
+              const label = (ci.data.datasets[index]?.label || '').toLowerCase();
+              const stratKeys = ['fedavg', 'fedprox', 'scaffold', 'fedbn', 'fedbb', 'fedsol'];
+              const matchedKey = stratKeys.find(k => label.includes(k));
+              if (matchedKey) {
+                state.stratVisibility[matchedKey] = !isHidden;
+                const chk = document.getElementById(`chkStrat${matchedKey.charAt(0).toUpperCase() + matchedKey.slice(1)}`);
+                if (chk) chk.checked = !isHidden;
+                try {
+                  localStorage.setItem('ecg_fl_strat_vis', JSON.stringify(state.stratVisibility));
+                } catch(err) {}
+              }
+            } else {
+              // Sync with per-client checklist if in clients mode
+              const label = ci.data.datasets[index]?.label || '';
+              if (label.includes('Global')) {
+                state.visibility.global = !isHidden;
+                const chk = document.getElementById('chkShowGlobal');
+                if (chk) chk.checked = !isHidden;
+              } else if (label.includes('PTB-XL') || label.includes('VM 2')) {
+                state.visibility.vm2 = !isHidden;
+                const chk = document.getElementById('chkShowVm2');
+                if (chk) chk.checked = !isHidden;
+              } else if (label.includes('Chapman') || label.includes('VM 3')) {
+                state.visibility.vm3 = !isHidden;
+                const chk = document.getElementById('chkShowVm3');
+                if (chk) chk.checked = !isHidden;
+              } else if (label.includes('G12EC') || label.includes('VM 4')) {
+                state.visibility.vm4 = !isHidden;
+                const chk = document.getElementById('chkShowVm4');
+                if (chk) chk.checked = !isHidden;
+              }
+              try {
+                localStorage.setItem('ecg_fl_client_vis', JSON.stringify(state.visibility));
+              } catch(err) {}
+            }
           }
         },
         tooltip: {
@@ -603,9 +658,11 @@ function initMetricsChart() {
   });
 }
 
-function updateMetricsChart(metricsData) {
+function updateMetricsChart(metricsData, isUserAction = true) {
   if (!state.chartInstance) initMetricsChart();
   if (!state.chartInstance) return;
+
+  state.chartInitializedOnce = true;
 
   const colors = getChartThemeColors();
   const metricKey = state.activeMetric; // 'f1', 'auroc', 'loss'
@@ -653,20 +710,19 @@ function updateMetricsChart(metricsData) {
     state.chartInstance.data.labels = maxRounds.length ? maxRounds : [1];
 
     Object.entries(stratLabels).forEach(([sKey, sLabel]) => {
-      if (state.stratVisibility[sKey]) {
-        const sObj = strats[sKey] || {};
-        const sVals = getMetricArray(sObj, metricKey);
-        datasets.push({
-          label: `${sLabel} (${metricKey.toUpperCase()})`,
-          data: sVals,
-          borderColor: stratColors[sKey],
-          backgroundColor: 'transparent',
-          borderWidth: 2.4,
-          tension: 0.25,
-          pointRadius: 3,
-          pointHoverRadius: 6
-        });
-      }
+      const sObj = strats[sKey] || {};
+      const sVals = getMetricArray(sObj, metricKey);
+      datasets.push({
+        label: `${sLabel} (${metricKey.toUpperCase()})`,
+        data: sVals,
+        borderColor: stratColors[sKey],
+        backgroundColor: 'transparent',
+        borderWidth: 2.4,
+        tension: 0.25,
+        pointRadius: 3,
+        pointHoverRadius: 6,
+        hidden: !state.stratVisibility[sKey]
+      });
     });
 
   } else {
@@ -678,22 +734,20 @@ function updateMetricsChart(metricsData) {
     state.chartInstance.data.labels = rounds.length ? rounds : [1];
 
     // 1. Global Model
-    if (state.visibility.global) {
-      const globalVals = getMetricArray(targetData, metricKey);
-      datasets.push({
-        label: `Global Model (${metricKey.toUpperCase()})`,
-        data: globalVals,
-        borderColor: colors.globalColor,
-        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-        borderWidth: 2.5,
-        tension: 0.25,
-        pointRadius: 3,
-        pointHoverRadius: 5
-      });
-    }
+    datasets.push({
+      label: `Global Model (${metricKey.toUpperCase()})`,
+      data: getMetricArray(targetData, metricKey),
+      borderColor: colors.globalColor,
+      backgroundColor: 'rgba(59, 130, 246, 0.1)',
+      borderWidth: 2.5,
+      tension: 0.25,
+      pointRadius: 3,
+      pointHoverRadius: 5,
+      hidden: !state.visibility.global
+    });
 
     // 2. Client 1 (PTB-XL)
-    if (state.visibility.vm2 && targetData.ptbxl) {
+    if (targetData.ptbxl) {
       datasets.push({
         label: 'VM 2: PTB-XL',
         data: getMetricArray(targetData.ptbxl, metricKey),
@@ -701,12 +755,13 @@ function updateMetricsChart(metricsData) {
         borderWidth: 1.8,
         borderDash: [4, 3],
         tension: 0.25,
-        pointRadius: 2
+        pointRadius: 2,
+        hidden: !state.visibility.vm2
       });
     }
 
     // 3. Client 2 (Chapman)
-    if (state.visibility.vm3 && targetData.chapman) {
+    if (targetData.chapman) {
       datasets.push({
         label: 'VM 3: Chapman',
         data: getMetricArray(targetData.chapman, metricKey),
@@ -714,12 +769,13 @@ function updateMetricsChart(metricsData) {
         borderWidth: 1.8,
         borderDash: [4, 3],
         tension: 0.25,
-        pointRadius: 2
+        pointRadius: 2,
+        hidden: !state.visibility.vm3
       });
     }
 
     // 4. Client 3 (G12EC)
-    if (state.visibility.vm4 && targetData.g12ec) {
+    if (targetData.g12ec) {
       datasets.push({
         label: 'VM 4: G12EC',
         data: getMetricArray(targetData.g12ec, metricKey),
@@ -727,14 +783,20 @@ function updateMetricsChart(metricsData) {
         borderWidth: 1.8,
         borderDash: [4, 3],
         tension: 0.25,
-        pointRadius: 2
+        pointRadius: 2,
+        hidden: !state.visibility.vm4
       });
     }
   }
 
   state.chartInstance.data.datasets = datasets;
   updateChartTheme();
-  state.chartInstance.update();
+  
+  if (isUserAction) {
+    state.chartInstance.update();
+  } else {
+    state.chartInstance.update('none');
+  }
 }
 
 // -------------------------------------------------------------
@@ -1202,7 +1264,9 @@ async function fetchStatus() {
     updateNodeExporterUI(data);
 
     if (!state.inspectedRun && data.metrics) {
-      updateMetricsChart(data.metrics);
+      if (state.chartAutoRefresh && (state.isRunning || !state.chartInitializedOnce)) {
+        updateMetricsChart(data.metrics, false);
+      }
     }
     if (data.benchmark) {
       renderLeaderboardTable(data.benchmark);
@@ -1312,8 +1376,26 @@ document.addEventListener('DOMContentLoaded', () => {
         if (selBox) selBox.style.display = 'inline-flex';
         if (subtitle) subtitle.textContent = 'Performa model global dan per-client convergence untuk deteksi drift';
       }
-      updateMetricsChart();
+      syncChartCheckboxes();
+      updateMetricsChart(null, true);
     });
+  });
+
+  // Auto-Refresh Toggle Button for Chart
+  document.getElementById('btnToggleChartAutoRefresh')?.addEventListener('click', () => {
+    state.chartAutoRefresh = !state.chartAutoRefresh;
+    const dot = document.getElementById('dotChartAutoRefresh');
+    const txt = document.getElementById('textChartAutoRefresh');
+    if (state.chartAutoRefresh) {
+      if (dot) dot.className = 'status-dot dot-online';
+      if (txt) txt.textContent = 'Auto-Update: Aktif';
+      if (state.cachedStatusData?.metrics) {
+        updateMetricsChart(state.cachedStatusData.metrics, true);
+      }
+    } else {
+      if (dot) dot.className = 'status-dot dot-busy';
+      if (txt) txt.textContent = 'Auto-Update: Dijeda';
+    }
   });
 
   // 6 Strategies Comparison Checkbox Toggles
@@ -1328,7 +1410,10 @@ document.addEventListener('DOMContentLoaded', () => {
   Object.entries(mapStrats).forEach(([chkId, key]) => {
     document.getElementById(chkId)?.addEventListener('change', (e) => {
       state.stratVisibility[key] = e.target.checked;
-      updateMetricsChart();
+      try {
+        localStorage.setItem('ecg_fl_strat_vis', JSON.stringify(state.stratVisibility));
+      } catch (err) {}
+      updateMetricsChart(null, true);
     });
   });
 
@@ -1338,7 +1423,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.querySelectorAll('#chartMetricTabs .seg-btn').forEach(b => b.classList.remove('active'));
       e.target.classList.add('active');
       state.activeMetric = e.target.dataset.metric;
-      updateMetricsChart();
+      updateMetricsChart(null, true);
     });
   });
 
@@ -1352,7 +1437,10 @@ document.addEventListener('DOMContentLoaded', () => {
   Object.entries(mapConv).forEach(([chkId, key]) => {
     document.getElementById(chkId)?.addEventListener('change', (e) => {
       state.visibility[key] = e.target.checked;
-      updateMetricsChart();
+      try {
+        localStorage.setItem('ecg_fl_client_vis', JSON.stringify(state.visibility));
+      } catch (err) {}
+      updateMetricsChart(null, true);
     });
   });
 
@@ -1419,6 +1507,35 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnDownloadModel')?.addEventListener('click', () => {
     window.location.href = '/api/download-model?tag=best';
   });
+
+  function syncChartCheckboxes() {
+    const mapStrats = {
+      chkStratFedavg: 'fedavg',
+      chkStratFedprox: 'fedprox',
+      chkStratScaffold: 'scaffold',
+      chkStratFedbn: 'fedbn',
+      chkStratFedbb: 'fedbb',
+      chkStratFedsol: 'fedsol'
+    };
+    Object.entries(mapStrats).forEach(([chkId, key]) => {
+      const el = document.getElementById(chkId);
+      if (el) el.checked = Boolean(state.stratVisibility[key]);
+    });
+
+    const mapConv = {
+      chkShowGlobal: 'global',
+      chkShowVm2: 'vm2',
+      chkShowVm3: 'vm3',
+      chkShowVm4: 'vm4'
+    };
+    Object.entries(mapConv).forEach(([chkId, key]) => {
+      const el = document.getElementById(chkId);
+      if (el) el.checked = Boolean(state.visibility[key]);
+    });
+  }
+
+  // Sync saved checkbox states to DOM
+  syncChartCheckboxes();
 
   // Initialize Chart
   initMetricsChart();

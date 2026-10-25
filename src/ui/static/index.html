@@ -756,6 +756,12 @@
           </div>
 
           <div class="chart-controls-wrapper">
+            <!-- Auto-Refresh Toggle Button -->
+            <button type="button" class="btn btn-secondary btn-xs btn-auto-refresh" id="btnToggleChartAutoRefresh" title="Jeda atau aktifkan auto-refresh kurva grafik">
+              <span class="status-dot dot-online" id="dotChartAutoRefresh"></span>
+              <span id="textChartAutoRefresh">Auto-Update: Aktif</span>
+            </button>
+
             <!-- Mode Switcher: Comparison vs Clients -->
             <div class="segmented-control" id="chartViewModeTabs">
               <button type="button" class="seg-btn active" data-viewmode="comparison">Komparasi 6 Metode</button>

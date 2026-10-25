@@ -1317,6 +1317,26 @@ body.theme-light .theme-icon-sun { display: inline-block; }
   color: #fff;
 }
 
+.btn-auto-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.25rem 0.55rem;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  background: var(--bg-subtle);
+  color: var(--text-main);
+  transition: all 0.15s ease;
+}
+
+.btn-auto-refresh:hover {
+  background: var(--bg-hover);
+  border-color: var(--color-primary);
+}
+
 /* Convergence Checkbox Strip */
 .convergence-toggles-strip {
   display: flex;
