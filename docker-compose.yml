@@ -48,7 +48,7 @@ services:
   dashboard:
     <<: *ecg-image
     build: .
-    container_name: fl-dashboard
+    container_name: fl-ckks-dashboard
     restart: unless-stopped
     ports:
       - "8501:8501"   # Web UI
