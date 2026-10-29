@@ -38,6 +38,9 @@ results/
 *.pem
 id_rsa*
 
+ckks-sidecar/sidecar
+ckks-sidecar/bin/
+
 # IDE & OS
 .DS_Store
 .vscode/

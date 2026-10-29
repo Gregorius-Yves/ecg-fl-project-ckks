@@ -2,18 +2,18 @@
 # ECG Federated Learning — seluruh sistem berjalan di Docker
 #
 # Satu host (semua klien di mesin ini):
-#   docker compose up -d --build dashboard
-#   docker compose --profile clients up -d
+#   docker-compose up -d --build dashboard
+#   docker-compose --profile clients up -d
 #
 # Terdistribusi (VM1 = server, VM2..4 = klien):
-#   VM1:  docker compose up -d --build dashboard
-#   VM2:  SERVER_ADDRESS=10.34.100.114:8080 docker compose --profile clients up -d client-ptbxl
-#   VM3:  SERVER_ADDRESS=10.34.100.114:8080 docker compose --profile clients up -d client-chapman
-#   VM4:  SERVER_ADDRESS=10.34.100.114:8080 docker compose --profile clients up -d client-g12ec
+#   VM1:  docker-compose up -d --build dashboard
+#   VM2:  SERVER_ADDRESS=10.34.100.114:8080 docker-compose --profile clients up -d client-ptbxl
+#   VM3:  SERVER_ADDRESS=10.34.100.114:8080 docker-compose --profile clients up -d client-chapman
+#   VM4:  SERVER_ADDRESS=10.34.100.114:8080 docker-compose --profile clients up -d client-g12ec
 #
 # Data (sekali saja, per dataset):
-#   docker compose --profile tools run --rm download   --dataset ptbxl
-#   docker compose --profile tools run --rm preprocess --dataset ptbxl
+#   docker-compose --profile tools run --rm download   --dataset ptbxl
+#   docker-compose --profile tools run --rm preprocess --dataset ptbxl
 #
 # Dashboard: http://localhost:8501   | hasil permanen: ./results/runs/<strategi>-<waktu>/
 # ==============================================================================
@@ -40,6 +40,8 @@ x-client: &client
     VAL_FRACTION: ${VAL_FRACTION:-0.2}
     SPLIT_SEED: ${SPLIT_SEED:-42}
     TORCH_THREADS: ${TORCH_THREADS:-}
+    CKKS_ENABLED: ${CKKS_ENABLED:-0}
+    CKKS_SIDECAR_URL: ${CKKS_SIDECAR_URL:-http://ckks-sidecar:9090}
 
 services:
   # Dashboard + Orkestrasi Flower Server (server dijalankan sebagai subprocess oleh dashboard)
@@ -59,6 +61,8 @@ services:
       HOST: 0.0.0.0
       PORT: 8501
       RESULTS_DIR: /app/results
+      CKKS_ENABLED: ${CKKS_ENABLED:-0}
+      CKKS_SIDECAR_URL: ${CKKS_SIDECAR_URL:-http://ckks-sidecar:9090}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8501/api/strategies"]
       interval: 15s
@@ -91,6 +95,24 @@ services:
       CLIENT_ID: "3"
       DATASET_NAME: g12ec
       DATA_DIR: /app/data/g12ec
+
+  ckks-sidecar:
+    build:
+      context: ./ckks-sidecar
+      dockerfile: Dockerfile.sidecar
+    profiles: ["ckks"]
+    container_name: ckks-sidecar
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    environment:
+      CKKS_PARAM_SET: ${CKKS_PARAM_SET:-FL-D1-N16384}
+    command: ["-port", "9090", "-set", "${CKKS_PARAM_SET:-FL-D1-N16384}"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9090/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
   # ---- Tool data (profile "tools") ----
   download:

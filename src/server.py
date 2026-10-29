@@ -25,6 +25,7 @@ from flwr.common import ndarrays_to_parameters, parameters_to_ndarrays
 from src.models.resnet1d import ResNet1D, get_model_parameters
 from src.strategies.registry import build_strategy, strategy_names, is_registered
 from src.results_store import RunRecorder
+from src.ckks_client import get_ckks_client
 
 
 TIMING_FILE = os.path.join(os.getcwd(), "logs", "round_timing.json")
@@ -81,6 +82,53 @@ def record_round_end(server_round: int):
         pass
 
 
+def _ckks_aggregate(ckks, server_round, results, failures):
+    from flwr.common import parameters_to_ndarrays
+
+    total_samples = sum(fr.num_examples for _, fr in results)
+    client_chunks = []
+    client_weights = []
+    shapes_json = None
+    num_params = 0
+
+    for _, fit_res in results:
+        m = fit_res.metrics or {}
+        chunk_sizes = json.loads(m["ckks_chunk_sizes"])
+        ndarrays = parameters_to_ndarrays(fit_res.parameters)
+        chunks = [arr.tobytes()[:sz] for arr, sz in zip(ndarrays, chunk_sizes)]
+        client_chunks.append(chunks)
+        client_weights.append(fit_res.num_examples / total_samples)
+        if shapes_json is None:
+            shapes_json = m["ckks_shapes"]
+            num_params = int(m["ckks_num_params"])
+
+    agg_chunks, agg_metrics = ckks.aggregate(client_chunks, client_weights)
+    flat, dec_metrics = ckks.decrypt(agg_chunks, num_params)
+
+    shapes = json.loads(shapes_json)
+    arrays = []
+    offset = 0
+    for shape, dtype_str in shapes:
+        size = 1
+        for s in shape:
+            size *= s
+        arr = flat[offset:offset + size].reshape(shape).astype(dtype_str)
+        arrays.append(arr)
+        offset += size
+
+    metrics = {
+        "strategy": results[0][1].metrics.get("strategy", "fedavg"),
+        "aggregated_round": server_round,
+        "ckks_encrypted": True,
+    }
+    metrics.update(agg_metrics)
+    metrics.update(dec_metrics)
+    print(f"🔐 [CKKS] Round {server_round}: aggregate={agg_metrics.get('ckks_aggregate_ms', 0):.0f}ms, "
+          f"decrypt={dec_metrics.get('ckks_decrypt_ms', 0):.0f}ms, "
+          f"clients={len(results)}, total_samples={total_samples}", flush=True)
+    return ndarrays_to_parameters(arrays), metrics
+
+
 def get_strategy(strategy_name: str, recorder: RunRecorder, num_rounds: int, min_fit_clients: int,
                  min_available_clients: int, initial_params, state_keys):
     strategy_name = strategy_name.lower()
@@ -124,7 +172,19 @@ def get_strategy(strategy_name: str, recorder: RunRecorder, num_rounds: int, min
 
     orig_aggregate_fit = strategy.aggregate_fit
     def recorded_aggregate_fit(server_round, results, failures):
-        params, metrics = orig_aggregate_fit(server_round, results, failures)
+        ckks = get_ckks_client()
+        is_ckks = (
+            ckks is not None
+            and results
+            and results[0][1].metrics
+            and results[0][1].metrics.get("ckks_encrypted")
+        )
+
+        if is_ckks:
+            params, metrics = _ckks_aggregate(ckks, server_round, results, failures)
+        else:
+            params, metrics = orig_aggregate_fit(server_round, results, failures)
+
         clients = []
         for _, fit_res in results:
             m = fit_res.metrics or {}

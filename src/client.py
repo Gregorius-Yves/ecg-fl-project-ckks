@@ -30,6 +30,8 @@ import json
 import time
 import collections
 
+from src.ckks_client import get_ckks_client
+
 
 def set_seed(seed: int = 42):
     """Set random seed secara global untuk reproduktibilitas eksperimen."""
@@ -477,7 +479,30 @@ class ECGFlowerClient(fl.client.NumPyClient):
             "balance_score": float(getattr(self, "balance_score", 1.0)),
             "round_duration": float(round_duration)
         }
-        return self.get_parameters(config={}), num_examples, metrics
+
+        params = self.get_parameters(config={})
+        ckks = get_ckks_client()
+        if ckks is not None and ckks.is_available():
+            flat = np.concatenate([p.astype(np.float64).ravel() for p in params])
+            chunks_bytes, enc_metrics = ckks.encrypt(flat)
+            metrics.update(enc_metrics)
+            metrics["ckks_encrypted"] = True
+            metrics["ckks_num_params"] = int(len(flat))
+            chunk_sizes = [len(c) for c in chunks_bytes]
+            metrics["ckks_chunk_sizes"] = json.dumps(chunk_sizes)
+            metrics["ckks_shapes"] = json.dumps(
+                [(list(p.shape), str(p.dtype)) for p in params]
+            )
+            padded = []
+            for c in chunks_bytes:
+                pad = (8 - len(c) % 8) % 8
+                padded.append(np.frombuffer(c + b'\x00' * pad, dtype=np.float64).copy())
+            print(f"🔐 [CKKS] Encrypted {len(flat)} params -> {len(padded)} chunks "
+                  f"({enc_metrics.get('ckks_encrypt_ms', 0):.0f}ms, "
+                  f"{enc_metrics.get('ckks_bytes_total', 0)/1e6:.1f}MB)", flush=True)
+            return padded, num_examples, metrics
+
+        return params, num_examples, metrics
 
     def evaluate(self, parameters, config):
         """Evaluasi model global pada data VALIDASI lokal (tidak dipakai training).
