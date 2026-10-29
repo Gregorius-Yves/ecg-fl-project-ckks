@@ -29,6 +29,7 @@ from src.ckks_client import get_ckks_client
 
 
 TIMING_FILE = os.path.join(os.getcwd(), "logs", "round_timing.json")
+CKKS_METRICS_FILE = os.path.join(os.getcwd(), "logs", "ckks_rounds.json")
 
 
 def reset_live_timing():
@@ -38,6 +39,11 @@ def reset_live_timing():
         os.makedirs(os.path.dirname(TIMING_FILE), exist_ok=True)
         with open(TIMING_FILE, "w") as f:
             json.dump({}, f)
+    except Exception:
+        pass
+    try:
+        if os.path.exists(CKKS_METRICS_FILE):
+            os.remove(CKKS_METRICS_FILE)
     except Exception:
         pass
 
@@ -82,6 +88,24 @@ def record_round_end(server_round: int):
         pass
 
 
+def _save_ckks_round(server_round, data):
+    try:
+        os.makedirs(os.path.dirname(CKKS_METRICS_FILE), exist_ok=True)
+        existing = []
+        if os.path.exists(CKKS_METRICS_FILE):
+            with open(CKKS_METRICS_FILE, "r") as f:
+                existing = json.load(f).get("rounds", [])
+        data["round"] = server_round
+        data["timestamp"] = time.time()
+        existing = [r for r in existing if r.get("round") != server_round]
+        existing.append(data)
+        existing.sort(key=lambda r: r["round"])
+        with open(CKKS_METRICS_FILE, "w") as f:
+            json.dump({"rounds": existing}, f, indent=2)
+    except Exception:
+        pass
+
+
 def _ckks_aggregate(ckks, server_round, results, failures):
     from flwr.common import parameters_to_ndarrays
 
@@ -90,6 +114,7 @@ def _ckks_aggregate(ckks, server_round, results, failures):
     client_weights = []
     shapes_json = None
     num_params = 0
+    per_client = []
 
     for _, fit_res in results:
         m = fit_res.metrics or {}
@@ -98,6 +123,12 @@ def _ckks_aggregate(ckks, server_round, results, failures):
         chunks = [arr.tobytes()[:sz] for arr, sz in zip(ndarrays, chunk_sizes)]
         client_chunks.append(chunks)
         client_weights.append(fit_res.num_examples / total_samples)
+        per_client.append({
+            "dataset": str(m.get("dataset", "unknown")),
+            "encrypt_ms": m.get("ckks_encrypt_ms", 0),
+            "bytes_total": m.get("ckks_bytes_total", 0),
+            "num_examples": fit_res.num_examples,
+        })
         if shapes_json is None:
             shapes_json = m["ckks_shapes"]
             num_params = int(m["ckks_num_params"])
@@ -123,6 +154,17 @@ def _ckks_aggregate(ckks, server_round, results, failures):
     }
     metrics.update(agg_metrics)
     metrics.update(dec_metrics)
+
+    _save_ckks_round(server_round, {
+        "num_clients": len(results),
+        "num_params": num_params,
+        "num_chunks": len(client_chunks[0]) if client_chunks else 0,
+        "total_samples": total_samples,
+        "aggregate_ms": agg_metrics.get("ckks_aggregate_ms", 0),
+        "decrypt_ms": dec_metrics.get("ckks_decrypt_ms", 0),
+        "clients": per_client,
+    })
+
     print(f"🔐 [CKKS] Round {server_round}: aggregate={agg_metrics.get('ckks_aggregate_ms', 0):.0f}ms, "
           f"decrypt={dec_metrics.get('ckks_decrypt_ms', 0):.0f}ms, "
           f"clients={len(results)}, total_samples={total_samples}", flush=True)

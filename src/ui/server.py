@@ -1244,6 +1244,48 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
             })
             return
 
+        elif self.path == "/fl-ckks":
+            ckks_path = os.path.join(STATIC_DIR, "ckks.html")
+            if os.path.exists(ckks_path):
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+                self.end_headers()
+                with open(ckks_path, "rb") as f:
+                    self.wfile.write(f.read())
+            else:
+                self.send_error(404)
+            return
+
+        elif self.path == "/api/ckks/status":
+            import urllib.request as _ureq
+            ckks_enabled = os.environ.get("CKKS_ENABLED", "0") == "1"
+            sidecar = None
+            sidecar_url = os.environ.get("CKKS_SIDECAR_URL", "http://localhost:9090")
+            try:
+                req = _ureq.Request(f"{sidecar_url.rstrip('/')}/health")
+                with _ureq.urlopen(req, timeout=3) as resp:
+                    sidecar = json.loads(resp.read())
+            except Exception:
+                pass
+
+            rounds = []
+            ckks_file = os.path.join(LOG_DIR, "ckks_rounds.json")
+            if os.path.exists(ckks_file):
+                try:
+                    with open(ckks_file, "r") as f:
+                        rounds = json.load(f).get("rounds", [])
+                except Exception:
+                    pass
+
+            self._json({
+                "ckks_enabled": ckks_enabled,
+                "sidecar_url": sidecar_url,
+                "sidecar": sidecar,
+                "rounds": rounds,
+            })
+            return
+
         # Static file routing
         if self.path.startswith("/static/") or self.path == "/" or self.path == "/index.html":
             if self.path in ("/", "/index.html"):
