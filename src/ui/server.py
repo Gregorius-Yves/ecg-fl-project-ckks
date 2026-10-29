@@ -603,7 +603,7 @@ class CardioPulseHTTPHandler(SimpleHTTPRequestHandler):
                 python_bin, "-m", "src.server",
                 "--strategy", strat_str,
                 "--rounds", str(pm.config["num_rounds"]),
-                "--min_clients", "3"
+                "--min_clients", str(pm.config.get("min_clients", len(KNOWN_CLIENTS)))
             ]
 
             env = os.environ.copy()
