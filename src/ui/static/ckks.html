@@ -92,6 +92,25 @@
     .gc-body strong{color:var(--text);}
     .gc-analogy{margin-top:8px;padding:8px 10px;background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.15);border-radius:6px;font-size:11px;color:var(--green);line-height:1.5;}
 
+    .flow{background:var(--bg-card);border:1px solid var(--border);border-radius:11px;padding:20px;overflow-x:auto;}
+    .flow-title{font-size:14px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
+    .flow-svg text{font-family:var(--sans);fill:var(--text-sec);}
+    .flow-svg .node{rx:8;ry:8;stroke-width:1.5;}
+    .flow-svg .node-client{fill:rgba(16,185,129,.1);stroke:var(--green);}
+    .flow-svg .node-sidecar{fill:rgba(34,211,238,.1);stroke:var(--cyan);}
+    .flow-svg .node-server{fill:rgba(167,139,250,.1);stroke:var(--purple);}
+    .flow-svg .node-grpc{fill:rgba(251,191,36,.08);stroke:var(--amber);}
+    .flow-svg .arrow{stroke:var(--text-dim);stroke-width:1.2;fill:none;marker-end:url(#arrowhead);}
+    .flow-svg .arrow-enc{stroke:var(--green);stroke-dasharray:6 3;}
+    .flow-svg .arrow-dec{stroke:var(--amber);stroke-dasharray:6 3;}
+    .flow-svg .label{font-size:11px;fill:var(--text);font-weight:600;}
+    .flow-svg .sublabel{font-size:9px;fill:var(--text-dim);}
+    .flow-svg .step{font-size:9px;font-weight:700;font-family:var(--mono);}
+    .flow-svg .step-green{fill:var(--green);}
+    .flow-svg .step-cyan{fill:var(--cyan);}
+    .flow-svg .step-purple{fill:var(--purple);}
+    .flow-svg .step-amber{fill:var(--amber);}
+
     .compare{background:var(--bg-card);border:1px solid var(--border);border-radius:11px;padding:20px;}
     .compare-title{font-size:14px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:8px;}
     .compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
@@ -177,6 +196,85 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <div class="flow">
+      <div class="flow-title">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Alur Pipeline CKKS — Siapa Mengenkripsi Apa?
+      </div>
+      <svg class="flow-svg" viewBox="0 0 920 320" width="100%" height="320" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#576882"/></marker>
+          <marker id="arrowG" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#10b981"/></marker>
+          <marker id="arrowA" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#fbbf24"/></marker>
+        </defs>
+
+        <!-- Client boxes -->
+        <rect class="node node-client" x="20" y="30" width="150" height="56"/>
+        <text class="label" x="95" y="55" text-anchor="middle">Client PTB-XL</text>
+        <text class="sublabel" x="95" y="72" text-anchor="middle">Train lokal → flatten weights</text>
+
+        <rect class="node node-client" x="20" y="110" width="150" height="56"/>
+        <text class="label" x="95" y="135" text-anchor="middle">Client Chapman</text>
+        <text class="sublabel" x="95" y="152" text-anchor="middle">Train lokal → flatten weights</text>
+
+        <rect class="node node-client" x="20" y="190" width="150" height="56"/>
+        <text class="label" x="95" y="215" text-anchor="middle">Client G12EC</text>
+        <text class="sublabel" x="95" y="232" text-anchor="middle">Train lokal → flatten weights</text>
+
+        <!-- Step 1: Client → Sidecar (encrypt) -->
+        <text class="step step-green" x="215" y="24">① ENCRYPT</text>
+        <path class="arrow arrow-enc" d="M170,58 L250,58 L250,120 L280,120" marker-end="url(#arrowG)"/>
+        <path class="arrow arrow-enc" d="M170,138 L260,138 L260,138 L280,138" marker-end="url(#arrowG)"/>
+        <path class="arrow arrow-enc" d="M170,218 L250,218 L250,156 L280,156" marker-end="url(#arrowG)"/>
+
+        <!-- Sidecar (encrypt) -->
+        <rect class="node node-sidecar" x="284" y="100" width="155" height="76"/>
+        <text class="label" x="361" y="126" text-anchor="middle">CKKS Sidecar</text>
+        <text class="sublabel" x="361" y="142" text-anchor="middle">Encrypt(weights) → CT</text>
+        <text class="sublabel" x="361" y="156" text-anchor="middle">Lattigo v6 · Port 9090</text>
+
+        <!-- Step 2: Sidecar → gRPC (ciphertext) -->
+        <text class="step step-cyan" x="478" y="105">② KIRIM CT</text>
+        <path class="arrow arrow-enc" d="M439,138 L518,138" marker-end="url(#arrowG)"/>
+
+        <!-- Flower gRPC -->
+        <rect class="node node-grpc" x="522" y="110" width="130" height="56"/>
+        <text class="label" x="587" y="135" text-anchor="middle">Flower gRPC</text>
+        <text class="sublabel" x="587" y="152" text-anchor="middle">Port 8080 · Ciphertext</text>
+
+        <!-- Step 3: gRPC → Server Sidecar (aggregate) -->
+        <text class="step step-purple" x="685" y="105">③ AGGREGATE</text>
+        <path class="arrow" d="M652,138 L720,138" marker-end="url(#arrowhead)"/>
+
+        <!-- Sidecar (aggregate + decrypt) -->
+        <rect class="node node-sidecar" x="724" y="80" width="175" height="96"/>
+        <text class="label" x="811" y="108" text-anchor="middle">CKKS Sidecar</text>
+        <text class="sublabel" x="811" y="124" text-anchor="middle">Mul(CT, weight) + Add</text>
+        <text class="sublabel" x="811" y="140" text-anchor="middle">→ Aggregated CT</text>
+        <text class="sublabel" x="811" y="158" text-anchor="middle">→ Decrypt → Global Model</text>
+
+        <text class="step step-amber" x="740" y="195">④ DECRYPT</text>
+
+        <!-- Result arrow back -->
+        <path class="arrow arrow-dec" d="M811,176 L811,230 L587,230 L587,260" marker-end="url(#arrowA)"/>
+
+        <!-- Global model result -->
+        <rect class="node node-server" x="512" y="264" width="150" height="46"/>
+        <text class="label" x="587" y="285" text-anchor="middle">Global Model</text>
+        <text class="sublabel" x="587" y="299" text-anchor="middle">Plaintext · Broadcast</text>
+
+        <!-- Broadcast back to clients -->
+        <path class="arrow" d="M512,287 L95,287 L95,246" marker-end="url(#arrowhead)"/>
+        <text class="step step-purple" x="250" y="280">⑤ BROADCAST</text>
+
+        <!-- Legend -->
+        <line x1="30" y1="295" x2="60" y2="295" stroke="#10b981" stroke-width="1.5" stroke-dasharray="6 3"/>
+        <text class="sublabel" x="65" y="299">= Data terenkripsi (ciphertext)</text>
+        <line x1="280" y1="295" x2="310" y2="295" stroke="#576882" stroke-width="1.2"/>
+        <text class="sublabel" x="315" y="299">= Data plaintext</text>
+      </svg>
     </div>
 
     <div class="compare" id="compareSection">
