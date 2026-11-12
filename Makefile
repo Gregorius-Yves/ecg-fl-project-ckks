@@ -60,13 +60,13 @@ client-g12ec-remote:
 	SERVER_ADDRESS=$(SERVER_IP):8080 $(COMPOSE) --profile clients up -d client-g12ec
 
 client-ptbxl-remote-ckks:
-	SERVER_ADDRESS=$(SERVER_IP):8080 $(CKKS_ENV) $(COMPOSE) --profile clients up -d client-ptbxl
+	SERVER_ADDRESS=$(SERVER_IP):8080 $(CKKS_ENV) CKKS_SIDECAR_URL=http://$(SERVER_IP):9090 $(COMPOSE) --profile clients up -d client-ptbxl
 
 client-chapman-remote-ckks:
-	SERVER_ADDRESS=$(SERVER_IP):8080 $(CKKS_ENV) $(COMPOSE) --profile clients up -d client-chapman
+	SERVER_ADDRESS=$(SERVER_IP):8080 $(CKKS_ENV) CKKS_SIDECAR_URL=http://$(SERVER_IP):9090 $(COMPOSE) --profile clients up -d client-chapman
 
 client-g12ec-remote-ckks:
-	SERVER_ADDRESS=$(SERVER_IP):8080 $(CKKS_ENV) $(COMPOSE) --profile clients up -d client-g12ec
+	SERVER_ADDRESS=$(SERVER_IP):8080 $(CKKS_ENV) CKKS_SIDECAR_URL=http://$(SERVER_IP):9090 $(COMPOSE) --profile clients up -d client-g12ec
 
 # ── Alias lama ────────────────────────────────────────────────────────
 
