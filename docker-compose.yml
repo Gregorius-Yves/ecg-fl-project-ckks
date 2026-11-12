@@ -71,7 +71,7 @@ services:
 
   client-ptbxl:
     <<: *client
-    container_name: fl-client-ptbxl
+    container_name: fl-ckks-client-ptbxl
     environment:
       <<: *client-env
       CLIENT_ID: "1"
@@ -80,7 +80,7 @@ services:
 
   client-chapman:
     <<: *client
-    container_name: fl-client-chapman
+    container_name: fl-ckks-client-chapman
     environment:
       <<: *client-env
       CLIENT_ID: "2"
@@ -89,7 +89,7 @@ services:
 
   client-g12ec:
     <<: *client
-    container_name: fl-client-g12ec
+    container_name: fl-ckks-client-g12ec
     environment:
       <<: *client-env
       CLIENT_ID: "3"
