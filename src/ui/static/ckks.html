@@ -82,7 +82,33 @@
     .disabled-banner{background:var(--amber-bg);border:1px solid rgba(251,191,36,.25);border-radius:11px;padding:16px 20px;display:flex;align-items:center;gap:12px;font-size:13px;color:var(--amber);}
     .disabled-banner code{font-family:var(--mono);background:rgba(0,0,0,.3);padding:2px 6px;border-radius:4px;font-size:12px;}
 
+    .guide{background:var(--bg-card);border:1px solid var(--border);border-radius:11px;padding:20px;}
+    .guide-title{font-size:14px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:8px;}
+    .guide-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;}
+    .gc{background:rgba(0,0,0,.2);border:1px solid var(--border);border-radius:9px;padding:14px 16px;}
+    .gc-num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;background:var(--green-bg);color:var(--green);font-size:11px;font-weight:700;font-family:var(--mono);margin-right:8px;flex-shrink:0;}
+    .gc-head{font-size:13px;font-weight:600;margin-bottom:6px;display:flex;align-items:center;}
+    .gc-body{font-size:12px;color:var(--text-sec);line-height:1.55;}
+    .gc-body strong{color:var(--text);}
+    .gc-analogy{margin-top:8px;padding:8px 10px;background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.15);border-radius:6px;font-size:11px;color:var(--green);line-height:1.5;}
+
+    .compare{background:var(--bg-card);border:1px solid var(--border);border-radius:11px;padding:20px;}
+    .compare-title{font-size:14px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:8px;}
+    .compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+    .compare-col{border-radius:9px;padding:14px;overflow:hidden;}
+    .compare-col.plain{background:rgba(251,113,133,.06);border:1px solid rgba(251,113,133,.2);}
+    .compare-col.enc{background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.2);}
+    .compare-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px;}
+    .compare-col.plain .compare-label{color:var(--rose);}
+    .compare-col.enc .compare-label{color:var(--green);}
+    .compare-desc{font-size:11px;color:var(--text-sec);margin-bottom:10px;line-height:1.5;}
+    .hex-dump{font-family:var(--mono);font-size:10px;line-height:1.6;color:var(--text-dim);background:rgba(0,0,0,.3);border-radius:6px;padding:10px 12px;word-break:break-all;max-height:120px;overflow-y:auto;}
+    .hex-dump .hi{color:var(--text);}
+    .val-preview{font-family:var(--mono);font-size:11px;color:var(--text-sec);background:rgba(0,0,0,.3);border-radius:6px;padding:10px 12px;line-height:1.6;}
+    .val-preview .num{color:var(--rose);}
+
     @media(max-width:768px){
+      .compare-grid{grid-template-columns:1fr;}
       .header{padding:10px 16px;flex-wrap:wrap;gap:8px;}
       .stats{grid-template-columns:repeat(2,1fr);}
       .row2{grid-template-columns:1fr;}
@@ -114,6 +140,71 @@
     <div id="disabledBanner" class="disabled-banner" style="display:none;">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       <span>CKKS encryption is disabled. Start with <code>CKKS_ENABLED=1</code> to activate.</span>
+    </div>
+
+    <div class="guide">
+      <div class="guide-title">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        Panduan Konsep CKKS Homomorphic Encryption
+      </div>
+      <div class="guide-grid">
+        <div class="gc">
+          <div class="gc-head"><span class="gc-num">1</span>Apa itu Homomorphic Encryption?</div>
+          <div class="gc-body">
+            Teknik kriptografi yang memungkinkan <strong>komputasi langsung pada data terenkripsi</strong> tanpa harus mendekripsi terlebih dahulu. Hasil komputasi, setelah didekripsi, identik dengan hasil komputasi pada data asli.
+            <div class="gc-analogy">💡 <strong>Analogi:</strong> Anda bisa menjumlahkan isi dua brankas terkunci tanpa membukanya — hasilnya tetap benar saat brankas dibuka.</div>
+          </div>
+        </div>
+        <div class="gc">
+          <div class="gc-head"><span class="gc-num">2</span>Apa itu Skema CKKS?</div>
+          <div class="gc-body">
+            CKKS (Cheon-Kim-Kim-Song) adalah skema HE yang dirancang khusus untuk <strong>bilangan desimal (floating-point)</strong>. Cocok untuk bobot model AI yang berupa vektor angka desimal. Menggunakan <strong>Ring-LWE</strong> dan <strong>polynomial encoding</strong> dengan keamanan 128-bit pasca-kuantum.
+            <div class="gc-analogy">🔬 <strong>Parameter:</strong> FL-D1-N16384 → LogN=14, 8.192 slot per ciphertext, depth 1 (server-weighted multiplication + summation).</div>
+          </div>
+        </div>
+        <div class="gc">
+          <div class="gc-head"><span class="gc-num">3</span>Mengapa HE untuk Federated Learning?</div>
+          <div class="gc-body">
+            FL standar mengirim <strong>bobot model plaintext</strong> ke server — server bisa membaca update tiap klien. Dengan CKKS, klien <strong>mengenkripsi bobot sebelum dikirim</strong>. Server mengagregasi ciphertext secara homomorfik dan hanya mendekripsi hasil agregat. <strong>Bobot individu klien tidak pernah terlihat oleh server.</strong>
+            <div class="gc-analogy">🛡️ <strong>Perlindungan:</strong> Server hanya melihat data terenkripsi acak — zero knowledge terhadap update individual.</div>
+          </div>
+        </div>
+        <div class="gc">
+          <div class="gc-head"><span class="gc-num">4</span>Pipeline CKKS di Sistem Ini</div>
+          <div class="gc-body">
+            <strong>1.</strong> Klien melatih model lokal → <strong>2.</strong> Bobot di-flatten menjadi vektor float64 → <strong>3.</strong> Vektor dipecah menjadi 33 chunk (8.192 slot) → <strong>4.</strong> Tiap chunk dienkripsi via Go sidecar (Lattigo v6) → <strong>5.</strong> Ciphertext dikirim via Flower gRPC → <strong>6.</strong> Server: <code>Mul(ct, weight)</code> + <code>Add</code> homomorfik → <strong>7.</strong> Decrypt agregat → model global baru.
+            <div class="gc-analogy">⚡ <strong>Overhead:</strong> ~160ms encrypt, ~70ms aggregate, ~23ms decrypt per ronde — presisi ~28 bit (MAE &lt; 5×10⁻⁸).</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="compare" id="compareSection">
+      <div class="compare-title">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20"/></svg>
+        Perbandingan Data: Tanpa Enkripsi vs Dengan CKKS
+      </div>
+      <div class="compare-grid">
+        <div class="compare-col plain">
+          <div class="compare-label">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+            Tanpa CKKS (Plaintext)
+          </div>
+          <div class="compare-desc">Server melihat bobot model asli — angka desimal yang dapat dibaca langsung.</div>
+          <div id="ptPreview" class="val-preview">Menunggu data ronde pertama...</div>
+          <div style="margin-top:8px;font-size:10px;color:var(--text-dim);">Hex dump (IEEE 754 float64 LE):</div>
+          <div id="ptHex" class="hex-dump" style="margin-top:4px;">--</div>
+        </div>
+        <div class="compare-col enc">
+          <div class="compare-label">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            Dengan CKKS (Ciphertext)
+          </div>
+          <div class="compare-desc">Server hanya melihat data terenkripsi — tidak ada informasi yang dapat diekstrak.</div>
+          <div id="ctHex" class="hex-dump">Menunggu data ronde pertama...</div>
+          <div style="margin-top:8px;font-size:10px;color:var(--text-dim);">128 byte pertama dari ciphertext chunk #0 — data tampak acak dan tidak bermakna.</div>
+        </div>
+      </div>
     </div>
 
     <div class="stats">
@@ -348,6 +439,36 @@ function updateTable(rounds) {
   wrap.innerHTML = html;
 }
 
+function fmtHex(hex) {
+  if (!hex) return '--';
+  let out = '';
+  for (let i = 0; i < hex.length; i += 2) {
+    if (i > 0 && i % 32 === 0) out += '\n';
+    else if (i > 0) out += ' ';
+    out += hex.substr(i, 2);
+  }
+  return out;
+}
+
+function updateCompare(rounds) {
+  if (!rounds.length) return;
+  const last = rounds[rounds.length - 1];
+
+  const ptVals = last.sample_pt_values;
+  if (ptVals && ptVals.length) {
+    const el = document.getElementById('ptPreview');
+    el.innerHTML = 'float64 weights[0:16] = [\n' +
+      ptVals.map(v => '  <span class="num">' + v + '</span>').join(',\n') +
+      '\n]';
+  }
+  if (last.sample_pt_hex) {
+    document.getElementById('ptHex').textContent = fmtHex(last.sample_pt_hex);
+  }
+  if (last.sample_ct_hex) {
+    document.getElementById('ctHex').textContent = fmtHex(last.sample_ct_hex);
+  }
+}
+
 let prevLen = -1;
 async function poll() {
   try {
@@ -358,6 +479,7 @@ async function poll() {
     if (r.length !== prevLen) {
       updateCharts(r);
       updateTable(r);
+      updateCompare(r);
       prevLen = r.length;
     }
   } catch {}

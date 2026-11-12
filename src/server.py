@@ -155,6 +155,10 @@ def _ckks_aggregate(ckks, server_round, results, failures):
     metrics.update(agg_metrics)
     metrics.update(dec_metrics)
 
+    pt_sample = flat[:16].tobytes().hex() if len(flat) >= 16 else flat.tobytes().hex()
+    pt_values = [round(float(v), 8) for v in flat[:16]]
+    ct_sample = client_chunks[0][0][:128].hex() if client_chunks and client_chunks[0] else ""
+
     _save_ckks_round(server_round, {
         "num_clients": len(results),
         "num_params": num_params,
@@ -163,6 +167,9 @@ def _ckks_aggregate(ckks, server_round, results, failures):
         "aggregate_ms": agg_metrics.get("ckks_aggregate_ms", 0),
         "decrypt_ms": dec_metrics.get("ckks_decrypt_ms", 0),
         "clients": per_client,
+        "sample_ct_hex": ct_sample,
+        "sample_pt_hex": pt_sample,
+        "sample_pt_values": pt_values,
     })
 
     print(f"🔐 [CKKS] Round {server_round}: aggregate={agg_metrics.get('ckks_aggregate_ms', 0):.0f}ms, "
