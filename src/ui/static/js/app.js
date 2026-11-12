@@ -1137,6 +1137,10 @@ async function startExperiment() {
   const form = document.getElementById('formExperimentControl');
   if (!form) return;
 
+  if (state.isRunning) {
+    if (!confirm('Eksperimen sedang berjalan. Hentikan dan mulai ulang?')) return;
+  }
+
   const formData = new FormData(form);
   const strategy = formData.get('strategy') || 'fedbn';
   const num_rounds = parseInt(formData.get('num_rounds') || '50', 10);
@@ -1146,7 +1150,6 @@ async function startExperiment() {
   const proximal_mu = parseFloat(formData.get('proximal_mu') || '0.01');
   const seed = parseInt(formData.get('seed') || '42', 10);
 
-  // Active client checkboxes
   const active_clients = [];
   if (document.getElementById('chkClientVm2')?.checked) active_clients.push('vm2');
   if (document.getElementById('chkClientVm3')?.checked) active_clients.push('vm3');
@@ -1273,7 +1276,10 @@ async function fetchStatus() {
     }
 
     const btnStart = document.getElementById('btnStartTraining');
-    if (btnStart) btnStart.disabled = state.isRunning;
+    if (btnStart) {
+      btnStart.disabled = false;
+      btnStart.textContent = state.isRunning ? '⟳ Mulai Ulang' : 'Mulai Eksperimen';
+    }
   } catch (err) {
     console.error('Error fetching status:', err);
     updateGlobalConnectionBadge('error');

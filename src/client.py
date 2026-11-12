@@ -106,7 +106,8 @@ class HeartbeatThread(threading.Thread):
         super().__init__(daemon=True)
         self.client = client
         server_host = server_address.split(":")[0] if ":" in server_address else server_address
-        self.url = f"http://{server_host}:8501/api/client/heartbeat"
+        dashboard_port = os.environ.get("DASHBOARD_PORT", "8502")
+        self.url = f"http://{server_host}:{dashboard_port}/api/client/heartbeat"
         self.interval = interval
         self.running = True
         self.has_logged_success = False
@@ -563,7 +564,7 @@ def main():
         epochs=args.epochs
     )
 
-    # Mulai thread heartbeat background ke Dashboard Web UI (port 8501)
+    # Mulai thread heartbeat background ke Dashboard Web UI
     heartbeat = HeartbeatThread(client, args.server)
     heartbeat.start()
 
