@@ -1,4 +1,4 @@
-COMPOSE = docker-compose
+COMPOSE = docker compose
 CKKS_ENV = CKKS_ENABLED=1
 SERVER_IP ?= 10.34.100.114
 
